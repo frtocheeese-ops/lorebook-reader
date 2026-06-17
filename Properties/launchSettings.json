@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Blish HUD": {
+      "commandName": "Executable",
+      "executablePath": "C:\\DOPLN\\CESTU\\Blish HUD.exe",
+      "commandLineArgs": "--debug --module \"C:\\DOPLN\\CESTU\\K\\PROJEKTU\\bin\\LorebookReader.bhm\""
+    }
+  }
+}

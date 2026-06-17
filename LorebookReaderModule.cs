@@ -1,0 +1,704 @@
+using System;
+using System.ComponentModel.Composition;
+using System.Linq;
+using System.Drawing;
+using System.Threading.Tasks;
+using Blish_HUD;
+using Blish_HUD.Controls;
+using Blish_HUD.Input;
+using Blish_HUD.Modules;
+using Blish_HUD.Modules.Managers;
+using Blish_HUD.Settings;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+using Rectangle = System.Drawing.Rectangle;
+using Point = Microsoft.Xna.Framework.Point;
+using Color = Microsoft.Xna.Framework.Color;
+
+namespace Frtal.LorebookReader {
+
+    [Export(typeof(Blish_HUD.Modules.Module))]
+    public class LorebookReaderModule : Blish_HUD.Modules.Module {
+
+        private static readonly Logger Logger =
+            Logger.GetLogger<LorebookReaderModule>();
+
+        // --- settings ---
+        private SettingEntry<KeyBinding> _readKeybind;
+        private SettingEntry<KeyBinding> _stopKeybind;
+        private SettingEntry<bool>       _showSpeakerButton;
+        private SettingEntry<string>     _voiceName;
+        private SettingEntry<float>      _speakingRate;
+        private SettingEntry<string>     _ocrLanguage;
+        private SettingEntry<string>     _voiceEngine;   // "windows" / "edge"
+        private SettingEntry<string>     _edgeVoice;
+        private SettingEntry<bool>       _showSubtitles;
+        private SettingEntry<float>      _subtitleOpacity;   // 0.2-1.0
+        private SettingEntry<float>      _subtitleX;         // % šířky
+        private SettingEntry<float>      _subtitleY;         // % výšky
+        private SettingEntry<int>        _subtitleFontSize;  // 18/24/32/36
+        private SettingEntry<string>     _translateMode;     // off/subtitles/full
+        private SettingEntry<string>     _translateTarget;   // kód jazyka
+        private SettingEntry<int>        _historyCapacity;
+
+        // přístup pro LorebookSettingsView
+        internal SettingEntry<KeyBinding> ReadKeybindSetting       => _readKeybind;
+        internal SettingEntry<KeyBinding> StopKeybindSetting       => _stopKeybind;
+        internal SettingEntry<bool>       ShowSpeakerButtonSetting => _showSpeakerButton;
+        internal SettingEntry<string>     VoiceNameSetting         => _voiceName;
+        internal SettingEntry<float>      SpeakingRateSetting      => _speakingRate;
+        internal SettingEntry<string>     OcrLanguageSetting       => _ocrLanguage;
+        internal SettingEntry<string>     VoiceEngineSetting       => _voiceEngine;
+        internal SettingEntry<string>     EdgeVoiceSetting         => _edgeVoice;
+        internal SettingEntry<bool>       ShowSubtitlesSetting     => _showSubtitles;
+        internal SettingEntry<float>      SubtitleOpacitySetting   => _subtitleOpacity;
+        internal SettingEntry<float>      SubtitleXSetting         => _subtitleX;
+        internal SettingEntry<float>      SubtitleYSetting         => _subtitleY;
+        internal SettingEntry<int>        SubtitleFontSizeSetting  => _subtitleFontSize;
+        internal SettingEntry<string>     TranslateModeSetting     => _translateMode;
+        internal SettingEntry<string>     TranslateTargetSetting   => _translateTarget;
+        internal SettingEntry<int>        HistoryCapacitySetting   => _historyCapacity;
+
+        // --- stav ---
+        private TtsService _tts;
+        private EdgeTtsService _edgeTts;
+        private LorebookCatalog _catalog;
+        private CornerIcon _cornerIcon;
+        private StandardWindow _historyWindow;
+        private volatile bool _catalogDirty;
+        private TextRenderer _textRenderer;
+        private EncyclopediaView _encyclopediaView;
+        private Texture2D _parchmentTexture;
+
+        internal TextRenderer SharedTextRenderer => _textRenderer;
+        private int _speakSession;
+        private volatile bool _chunkTranslate;
+        private string _chunkTranslateTarget = "cs";
+        private Blish_HUD.Controls.Image _speakerButton;
+        private Blish_HUD.Controls.Image _saveButton;
+        private Blish_HUD.Controls.Image _appendButton;
+        private SubtitleOverlay _subtitleLabel;
+        private volatile bool _subtitleDirty;
+        private string _pendingSubtitle;
+        private int _lastSubWidth = -1;
+        private int _lastFontSize = -1;
+        private bool _readBusy;
+        private bool _detectBusy;
+        private double _detectTimerMs;
+
+        // poslední výsledek detekce na pozadí (aplikuje se v Update)
+        private volatile bool _bookVisible;
+        private Rectangle _bookBox;          // v pixelech klientské oblasti GW2
+        private Rectangle _gw2ClientRect;    // velikost klientské oblasti
+
+        [ImportingConstructor]
+        public LorebookReaderModule(
+            [Import("ModuleParameters")] ModuleParameters moduleParameters)
+            : base(moduleParameters) { }
+
+        public override Blish_HUD.Graphics.UI.IView GetSettingsView() =>
+            new LorebookSettingsView(this);
+
+        protected override void DefineSettings(SettingCollection settings) {
+            _readKeybind = settings.DefineSetting(
+                "ReadKeybind",
+                new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.R),
+                () => "Read lorebook",
+                () => "Reads the currently open lorebook aloud.");
+
+            _stopKeybind = settings.DefineSetting(
+                "StopKeybind",
+                new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.S),
+                () => "Stop reading",
+                () => "Stops the current text-to-speech playback.");
+
+            _showSpeakerButton = settings.DefineSetting(
+                "ShowSpeakerButton", true,
+                () => "Show speaker icon on open books",
+                () => "Displays a clickable speaker icon next to a detected lorebook.");
+
+            _voiceName = settings.DefineSetting(
+                "VoiceName", "",
+                () => "Voice (part of name)",
+                () => "Leave empty for default. Available voices are listed in the log on module start.");
+
+            _speakingRate = settings.DefineSetting(
+                "SpeakingRate", 1.0f,
+                () => "Speaking rate",
+                () => "1.0 = normal speed.");
+            _speakingRate.SetRange(0.5f, 2.0f);
+
+            _ocrLanguage = settings.DefineSetting(
+                "OcrLanguage", "en-US",
+                () => "OCR language",
+                () => "Language of your GW2 client: en-US, de-DE, fr-FR or es-ES.");
+
+            _voiceEngine = settings.DefineSetting(
+                "VoiceEngine", "windows",
+                () => "Voice engine",
+                () => "Windows = offline (private). Edge = online neural voices "
+                    + "via a free Microsoft endpoint (sends text to a third party).");
+
+            _edgeVoice = settings.DefineSetting(
+                "EdgeVoice", "en-GB-RyanNeural",
+                () => "Edge neural voice",
+                () => "Used when the voice engine is set to Edge.");
+
+            _showSubtitles = settings.DefineSetting(
+                "ShowSubtitles", true,
+                () => "Show subtitles",
+                () => "Displays the text being read as an on-screen overlay.");
+
+            _subtitleOpacity = settings.DefineSetting(
+                "SubtitleOpacity", 0.9f,
+                () => "Subtitle opacity", () => "");
+            _subtitleOpacity.SetRange(0.2f, 1.0f);
+
+            _subtitleX = settings.DefineSetting(
+                "SubtitleX", 50f,
+                () => "Subtitle horizontal position (%)", () => "");
+            _subtitleX.SetRange(0f, 100f);
+
+            _subtitleY = settings.DefineSetting(
+                "SubtitleY", 82f,
+                () => "Subtitle vertical position (%)", () => "");
+            _subtitleY.SetRange(0f, 100f);
+
+            _subtitleFontSize = settings.DefineSetting(
+                "SubtitleFontSize", 24,
+                () => "Subtitle size", () => "");
+
+            _translateMode = settings.DefineSetting(
+                "TranslateMode", "off",
+                () => "Translation",
+                () => "Off / subtitles only / subtitles + speech. Uses a free "
+                    + "online translation endpoint (sends text to a third party).");
+
+            _translateTarget = settings.DefineSetting(
+                "TranslateTarget", "cs",
+                () => "Translate to",
+                () => "Target language for translation.");
+
+            _historyCapacity = settings.DefineSetting(
+                "HistoryCapacity", 10,
+                () => "History size",
+                () => "How many recently read lorebooks to keep.");
+        }
+
+        protected override async Task LoadAsync() {
+            _tts = new TtsService();
+            _edgeTts = new EdgeTtsService();
+            _textRenderer = new TextRenderer(GameService.Graphics.GraphicsDeviceManager.GraphicsDevice);
+
+            string dir = ModuleParameters.DirectoriesManager
+                .GetFullDirectoryPath("lorebook_reader");
+            _catalog = new LorebookCatalog(dir, _historyCapacity.Value);
+            _catalog.Changed += () => _catalogDirty = true;
+            Logger.Info("Available TTS voices: "
+                        + string.Join(", ", TtsService.InstalledVoices()
+                            .Select(v => $"{v.Name} [{v.Lang}]")));
+            await Task.CompletedTask;
+        }
+
+        protected override void OnModuleLoaded(EventArgs e) {
+            _readKeybind.Value.Enabled = true;
+            _readKeybind.Value.Activated += OnReadActivated;
+            _stopKeybind.Value.Enabled = true;
+            _stopKeybind.Value.Activated += OnStopActivated;
+
+            _speakerButton = MakeBookButton("speaker", "Read this book aloud",
+                () => StartRead());
+            _saveButton = MakeBookButton("save",
+                "Save to encyclopedia (don't read)", () => StartSaveOnly());
+            _appendButton = MakeBookButton("append",
+                "Append this page to the last saved book", () => StartAppend());
+
+            _subtitleLabel = new SubtitleOverlay(_textRenderer) {
+                Parent   = GameService.Graphics.SpriteScreen,
+                FontSize = _subtitleFontSize.Value,
+                BoxWidth = 600,
+                Visible  = false
+            };
+            _lastFontSize = _subtitleFontSize.Value;
+            _subtitleLabel.PositionEdited += (s, a) => {
+                var spriteP = GameService.Graphics.SpriteScreen.Size;
+                if (spriteP.X <= 0 || spriteP.Y <= 0) return;
+                float xPct = (_subtitleLabel.Location.X
+                              + _subtitleLabel.Width / 2f) / spriteP.X * 100f;
+                float yPct = (float)_subtitleLabel.Location.Y / spriteP.Y * 100f;
+                _subtitleX.Value = Math.Max(0f, Math.Min(100f, xPct));
+                _subtitleY.Value = Math.Max(0f, Math.Min(100f, yPct));
+            };
+
+            _parchmentTexture =
+                ModuleParameters.ContentsManager.GetTexture("parchment.png");
+
+            _cornerIcon = new CornerIcon(
+                ModuleParameters.ContentsManager.GetTexture("book.png"),
+                ModuleParameters.ContentsManager.GetTexture("book_hover.png"),
+                "Lorebook Encyclopedia");
+            _cornerIcon.Click += (s, a) => {
+                if (_historyWindow.Visible) {
+                    _historyWindow.Hide();
+                } else {
+                    ShowEncyclopedia();
+                }
+            };
+
+            _historyWindow = new StandardWindow(
+                GameService.Content.DatAssetCache.GetTextureFromAssetId(155985),
+                new Microsoft.Xna.Framework.Rectangle(40, 26, 913, 691),
+                new Microsoft.Xna.Framework.Rectangle(70, 71, 839, 605),
+                new Point(880, 640)) {
+                Parent        = GameService.Graphics.SpriteScreen,
+                Title         = "Lorebook Encyclopedia",
+                SavesPosition = true,
+                CanResize     = true,
+                Id            = "frtal_lorebook_reader_encyclopedia"
+            };
+
+            base.OnModuleLoaded(e);
+        }
+
+        internal bool SubtitleEditMode {
+            get => _subtitleLabel != null && _subtitleLabel.EditMode;
+            set {
+                if (_subtitleLabel == null) return;
+                if (value) {
+                    var sprite = GameService.Graphics.SpriteScreen.Size;
+                    int width = Math.Max(100, (int)(sprite.X * 0.45f));
+                    _subtitleLabel.BoxWidth = width;
+                    _lastSubWidth = width;
+                    _subtitleLabel.EditMode = true;
+                    int sx = (int)(sprite.X * (_subtitleX.Value / 100f))
+                             - width / 2;
+                    int sy = (int)(sprite.Y * (_subtitleY.Value / 100f));
+                    _subtitleLabel.Location = new Point(
+                        Math.Max(0, Math.Min(sx, sprite.X - width)),
+                        Math.Max(0, Math.Min(sy,
+                            sprite.Y - Math.Max(1, _subtitleLabel.Size.Y))));
+                } else {
+                    _subtitleLabel.EditMode = false;
+                }
+            }
+        }
+
+        private Blish_HUD.Controls.Image MakeBookButton(
+                string iconKey, string tooltip, Action onClick) {
+            var btn = new Blish_HUD.Controls.Image(
+                ModuleParameters.ContentsManager.GetTexture(iconKey + ".png")) {
+                Parent  = GameService.Graphics.SpriteScreen,
+                Size    = new Point(36, 36),
+                Visible = false,
+                BasicTooltipText = tooltip
+            };
+            btn.MouseEntered += (s, a) =>
+                btn.Texture = ModuleParameters.ContentsManager
+                    .GetTexture(iconKey + "_hover.png");
+            btn.MouseLeft += (s, a) =>
+                btn.Texture = ModuleParameters.ContentsManager
+                    .GetTexture(iconKey + ".png");
+            btn.Click += (s, a) => onClick();
+            return btn;
+        }
+
+        private void OnReadActivated(object sender, EventArgs e) => StartRead();
+        private void OnStopActivated(object sender, EventArgs e) {
+            _tts.Stop();
+            _edgeTts?.Stop();
+        }
+
+        private void StartRead() {
+            if (_readBusy) return;
+            _readBusy = true;
+            Task.Run(ReadPipelineAsync);
+        }
+
+        // tlačítko „uložit bez přehrání": OCR -> jen do katalogu
+        private void StartSaveOnly() {
+            if (_readBusy) return;
+            _readBusy = true;
+            Task.Run(SaveOnlyPipelineAsync);
+        }
+
+        // tlačítko „připojit za poslední": OCR -> append k nejnovější knize
+        private void StartAppend() {
+            if (_readBusy) return;
+            _readBusy = true;
+            Task.Run(AppendPipelineAsync);
+        }
+
+        private void OnTtsChunk(string chunk) {
+            if (chunk != null && _chunkTranslate) {
+                int session = _speakSession;
+                string src = chunk;
+                string target = _chunkTranslateTarget;
+                Task.Run(async () => {
+                    string shown = src;
+                    try {
+                        shown = await TranslationService.TranslateAsync(
+                            src, target);
+                    } catch { /* nech originál */ }
+                    if (session == _speakSession) {
+                        _pendingSubtitle =
+                            TextCleaner.SanitizeForDisplay(shown);
+                        _subtitleDirty = true;
+                    }
+                });
+                return;
+            }
+            _pendingSubtitle = chunk == null
+                ? null : TextCleaner.SanitizeForDisplay(chunk);
+            _subtitleDirty = true;
+        }
+
+        /// <summary>Společná OCR část: sejme obrazovku, najde pergamen,
+        /// rozpozná text a hlavičku. Vrací false, když není co číst.</summary>
+        private async Task<(bool ok, string title, string text)> CaptureBookAsync() {
+            string title = null;
+            string text;
+
+            IntPtr hwnd = GameService.GameIntegration.Gw2Instance.Gw2WindowHandle;
+            using (Bitmap screen = ScreenCapture.Grab(hwnd, out Rectangle screenRect)) {
+                Rectangle? box = ParchmentDetector.Find(screen, out double solidity);
+                if (box == null) {
+                    box = new Rectangle(
+                        (int)(screen.Width * 0.34), (int)(screen.Height * 0.12),
+                        (int)(screen.Width * 0.32), (int)(screen.Height * 0.80));
+                    Logger.Info("Parchment not detected, using center fallback.");
+                } else {
+                    Logger.Info($"Parchment {box} solidity {solidity:0.00}");
+                }
+
+                Rectangle inner = ParchmentDetector.InnerCrop(box.Value);
+                using (Bitmap crop = screen.Clone(inner, screen.PixelFormat)) {
+                    string raw = await OcrService.RecognizeAsync(
+                        crop, _ocrLanguage.Value);
+                    text = TextCleaner.CleanForTts(raw);
+                }
+                title = TryReadHeader(screen, box.Value);
+            }
+
+            if (text.Length < 20) {
+                ScreenNotification.ShowNotification(
+                    "Lorebook Reader: no readable text found. Is a book open?");
+                return (false, null, null);
+            }
+            Logger.Info($"OCR ok ({text.Length} chars)"
+                + (title != null ? $", title \"{title}\"" : "") + ".");
+            return (true, title, text);
+        }
+
+        private async Task ReadPipelineAsync() {
+            try {
+                var (ok, title, text) = await CaptureBookAsync();
+                if (!ok) return;
+                _catalog?.AddCaptured(title, text);   // uložit originál
+                await SpeakTextAsync(text);            // a přečíst
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Lorebook read failed.");
+                ScreenNotification.ShowNotification("Lorebook Reader: " + ex.Message);
+            } finally {
+                _readBusy = false;
+            }
+        }
+
+        private async Task SaveOnlyPipelineAsync() {
+            try {
+                var (ok, title, text) = await CaptureBookAsync();
+                if (!ok) return;
+                var entry = _catalog?.AddCaptured(title, text);
+                ScreenNotification.ShowNotification(
+                    "Saved to encyclopedia: " +
+                    (entry?.DisplayTitle ?? "lorebook"));
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Lorebook save failed.");
+                ScreenNotification.ShowNotification("Lorebook Reader: " + ex.Message);
+            } finally {
+                _readBusy = false;
+            }
+        }
+
+        private async Task AppendPipelineAsync() {
+            try {
+                var (ok, _, text) = await CaptureBookAsync();
+                if (!ok) return;
+                var entry = _catalog?.AppendToLatest(text);
+                if (entry == null) {
+                    ScreenNotification.ShowNotification(
+                        "Nothing to append to yet — save a book first.");
+                } else {
+                    ScreenNotification.ShowNotification(
+                        "Appended page to: " + entry.DisplayTitle);
+                }
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Lorebook append failed.");
+                ScreenNotification.ShowNotification("Lorebook Reader: " + ex.Message);
+            } finally {
+                _readBusy = false;
+            }
+        }
+
+        /// <summary>Přeloží (pokud zapnuto) a přečte text. Sdílené čtení
+        /// pro živý lorebook i přehrání z historie.</summary>
+        private async Task SpeakTextAsync(string text) {
+            int session = System.Threading.Interlocked.Increment(ref _speakSession);
+            string mode   = _translateMode.Value;
+            string target = _translateTarget.Value;
+            string speechLang = _ocrLanguage.Value;
+            string edgeVoice  = _edgeVoice.Value;
+
+            // full: přeložit celý text -> řeč i titulky v cílovém jazyce
+            if (mode == "full") {
+                try {
+                    string translated = await TranslationService.TranslateAsync(
+                        text, target);
+                    if (!string.IsNullOrWhiteSpace(translated)) {
+                        text = translated;
+                        speechLang = target;
+                        edgeVoice = EdgeTtsService.VoiceForLanguage(target)
+                                    ?? edgeVoice;
+                    }
+                } catch (Exception tEx) {
+                    Logger.Warn(tEx, "Translation failed, using original text.");
+                    ScreenNotification.ShowNotification(
+                        "Lorebook Reader: translation unavailable — using original.");
+                }
+            }
+
+            // subtitles only: řeč zůstává originál, titulky se překládají
+            // průběžně po dávkách v OnTtsChunk
+            _chunkTranslate = (mode == "subtitles");
+            _chunkTranslateTarget = target;
+
+            if (_voiceEngine.Value == "edge") {
+                try {
+                    await _edgeTts.SpeakAsync(
+                        text, edgeVoice, _speakingRate.Value, OnTtsChunk);
+                    return;
+                } catch (Exception edgeEx) {
+                    Logger.Warn(edgeEx,
+                        "Edge TTS failed, falling back to offline voice.");
+                    ScreenNotification.ShowNotification(
+                        "Lorebook Reader: online voice unavailable — using offline voice.");
+                }
+            }
+
+            string warning = await _tts.SpeakAsync(
+                text, _voiceName.Value, _speakingRate.Value,
+                speechLang, OnTtsChunk);
+            if (warning != null)
+                ScreenNotification.ShowNotification("Lorebook Reader: " + warning);
+        }
+
+        /// <summary>OCR pruhu nad pergamenem (název knihy). Chyba => null.</summary>
+        private string TryReadHeader(Bitmap screen, Rectangle parchment) {
+            try {
+                int hh = (int)(parchment.Height * 0.14);
+                int hx = Math.Max(0, parchment.X - 10);
+                int hy = Math.Max(0, parchment.Y - hh - 6);
+                int hw = Math.Min(parchment.Width + 20, screen.Width - hx);
+                int hAvail = parchment.Y - 2 - hy;
+                if (hAvail < 10 || hw < 20) return null;
+
+                var headerRect = new Rectangle(hx, hy, hw, hAvail);
+                using (Bitmap headerCrop =
+                           screen.Clone(headerRect, screen.PixelFormat)) {
+                    string raw = OcrService.RecognizeLineAsync(
+                        headerCrop, _ocrLanguage.Value).GetAwaiter().GetResult();
+                    raw = (raw ?? "").Trim();
+                    // rozumná délka názvu; jinak fallback později
+                    if (raw.Length < 2 || raw.Length > 60) return null;
+                    return raw;
+                }
+            } catch (Exception ex) {
+                Logger.Debug(ex, "Header OCR failed.");
+                return null;
+            }
+        }
+
+        // přehrání uloženého lorebooku z historie (volá settings view)
+        internal void PlayFromCatalog(LorebookEntry entry) {
+            if (entry == null || _readBusy) return;
+            _readBusy = true;
+            Task.Run(async () => {
+                try { await SpeakTextAsync(entry.Text); }
+                catch (Exception ex) { Logger.Warn(ex, "History playback failed."); }
+                finally { _readBusy = false; }
+            });
+        }
+
+        internal LorebookCatalog Catalog => _catalog;
+
+        private void ShowEncyclopedia() {
+            _encyclopediaView = new EncyclopediaView(this, _parchmentTexture);
+            _historyWindow.Show(_encyclopediaView);
+        }
+
+
+        internal void StopSpeaking() {
+            _tts?.Stop();
+            _edgeTts?.Stop();
+        }
+
+        internal void ExportCatalogDialog() {
+            try {
+                string dir = ModuleParameters.DirectoriesManager
+                    .GetFullDirectoryPath("lorebook_reader");
+                string path = System.IO.Path.Combine(dir,
+                    "lorebook_export_" + DateTime.Now.ToString("yyyyMMdd_HHmmss")
+                    + ".json");
+                _catalog.ExportToFile(path);
+                ScreenNotification.ShowNotification(
+                    "Exported to lorebook_reader\\" +
+                    System.IO.Path.GetFileName(path));
+                Logger.Info("Catalog exported to " + path);
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Export failed.");
+                ScreenNotification.ShowNotification("Export failed: " + ex.Message);
+            }
+        }
+
+        internal void ImportCatalogDialog() {
+            try {
+                string dir = ModuleParameters.DirectoriesManager
+                    .GetFullDirectoryPath("lorebook_reader");
+                // importuje nejnovější *.json soubor začínající lorebook_export
+                var files = System.IO.Directory.GetFiles(dir, "lorebook_export*.json");
+                if (files.Length == 0) {
+                    ScreenNotification.ShowNotification(
+                        "No export file found in lorebook_reader folder.");
+                    return;
+                }
+                string latest = files.OrderByDescending(f =>
+                    System.IO.File.GetLastWriteTimeUtc(f)).First();
+                int count = _catalog.ImportFromFile(latest, merge: true);
+                ScreenNotification.ShowNotification(
+                    $"Imported {count} lorebooks from " +
+                    System.IO.Path.GetFileName(latest));
+                if (_historyWindow.Visible) ShowEncyclopedia();
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Import failed.");
+                ScreenNotification.ShowNotification("Import failed: " + ex.Message);
+            }
+        }
+
+
+        protected override void Update(GameTime gameTime) {
+            // 1x za sekundu zkusit najít knihu kvůli ikonce reproduktoru
+            _detectTimerMs += gameTime.ElapsedGameTime.TotalMilliseconds;
+            if (_detectTimerMs >= 1000) {
+                _detectTimerMs = 0;
+                if (_showSpeakerButton.Value && !_detectBusy && !_readBusy) {
+                    _detectBusy = true;
+                    Task.Run(DetectForButton);
+                } else if (!_showSpeakerButton.Value) {
+                    _bookVisible = false;
+                }
+            }
+
+            // katalog: obnovit otevřené okno encyklopedie po novém záznamu
+            if (_catalogDirty && _historyWindow != null && _historyWindow.Visible) {
+                _catalogDirty = false;
+                if (_encyclopediaView != null) {
+                    _encyclopediaView.RebuildExpansionFilter();
+                    _encyclopediaView.RefreshList();
+                }
+            }
+
+            // titulky: aplikace textu/pozice (jen v Update threadu)
+            if (_subtitleLabel != null) {
+                if (_subtitleFontSize.Value != _lastFontSize) {
+                    _lastFontSize = _subtitleFontSize.Value;
+                    _subtitleLabel.FontSize = _lastFontSize;
+                }
+                if (_subtitleLabel.EditMode) {
+                    _subtitleLabel.Opacity = _subtitleOpacity.Value;
+                    // text, viditelnost a pozici v edit módu řídí overlay
+                } else {
+                if (_subtitleDirty) {
+                    _subtitleDirty = false;
+                    _subtitleLabel.SubtitleText = _pendingSubtitle ?? "";
+                }
+                bool show = _showSubtitles.Value
+                            && !string.IsNullOrEmpty(_subtitleLabel.SubtitleText);
+                if (show) {
+                    var sprite = GameService.Graphics.SpriteScreen.Size;
+                    int width = Math.Max(100, (int)(sprite.X * 0.45f));
+                    if (width != _lastSubWidth) {
+                        _subtitleLabel.BoxWidth = width;
+                        _lastSubWidth = width;
+                    }
+                    _subtitleLabel.Opacity = _subtitleOpacity.Value;
+                    int sx = (int)(sprite.X * (_subtitleX.Value / 100f)) - width / 2;
+                    int sy = (int)(sprite.Y * (_subtitleY.Value / 100f));
+                    _subtitleLabel.Location = new Point(
+                        Math.Max(0, Math.Min(sx, sprite.X - width)),
+                        Math.Max(0, Math.Min(sy,
+                            sprite.Y - Math.Max(1, _subtitleLabel.Size.Y))));
+                }
+                _subtitleLabel.Visible = show;
+                }
+            }
+
+            // aplikace výsledku detekce na UI (jen v Update threadu)
+            if (_speakerButton != null) {
+                if (_bookVisible && _gw2ClientRect.Width > 0) {
+                    var sprite = GameService.Graphics.SpriteScreen.Size;
+                    float scaleX = (float)sprite.X / _gw2ClientRect.Width;
+                    float scaleY = (float)sprite.Y / _gw2ClientRect.Height;
+                    int x = (int)((_bookBox.Right) * scaleX) + 6;
+                    int y = (int)(_bookBox.Top * scaleY);
+                    int bx = Math.Min(x, sprite.X - _speakerButton.Width);
+                    // tři ikony pod sebou: číst / uložit / připojit
+                    _speakerButton.Location = new Point(bx, Math.Max(0, y));
+                    _saveButton.Location    = new Point(bx, Math.Max(0, y + 40));
+                    _appendButton.Location  = new Point(bx, Math.Max(0, y + 80));
+                    _speakerButton.Visible = true;
+                    _saveButton.Visible    = true;
+                    _appendButton.Visible  = true;
+                } else {
+                    _speakerButton.Visible = false;
+                    _saveButton.Visible    = false;
+                    _appendButton.Visible  = false;
+                }
+            }
+        }
+
+        private void DetectForButton() {
+            try {
+                IntPtr hwnd = GameService.GameIntegration.Gw2Instance.Gw2WindowHandle;
+                using (Bitmap screen = ScreenCapture.Grab(hwnd, out Rectangle screenRect)) {
+                    Rectangle? box = ParchmentDetector.Find(screen, out _);
+                    if (box != null) {
+                        _bookBox = box.Value;
+                        _gw2ClientRect = new Rectangle(0, 0, screen.Width, screen.Height);
+                        _bookVisible = true;
+                    } else {
+                        _bookVisible = false;
+                    }
+                }
+            } catch (Exception ex) {
+                Logger.Debug(ex, "Button detection failed.");
+                _bookVisible = false;
+            } finally {
+                _detectBusy = false;
+            }
+        }
+
+        protected override void Unload() {
+            _readKeybind.Value.Activated -= OnReadActivated;
+            _stopKeybind.Value.Activated -= OnStopActivated;
+            _speakerButton?.Dispose();
+            _saveButton?.Dispose();
+            _appendButton?.Dispose();
+            _subtitleLabel?.Dispose();
+            _cornerIcon?.Dispose();
+            _textRenderer?.Dispose();
+            _historyWindow?.Dispose();
+            _tts?.Dispose();
+            _edgeTts?.Dispose();
+        }
+    }
+}
