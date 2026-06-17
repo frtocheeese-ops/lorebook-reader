@@ -6,32 +6,22 @@
     <AssemblyName>LorebookReader</AssemblyName>
     <RootNamespace>Frtal.LorebookReader</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RestorePackagesPath>pkg</RestorePackagesPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Stejně jako oficiální example modul:
-         ExcludeAssets runtime;contentFiles;analyzers je nutné, jinak
-         build selže, když se BlishHUD assets vylučují. BlishHUD NuGet
-         zároveň obsahuje target, který .bhm vygeneruje automaticky. -->
     <PackageReference Include="BlishHUD" Version="1.2.0"
                       ExcludeAssets="runtime;contentFiles;analyzers" />
-    <!-- nutné jako NuGet (ne holý Reference), jinak build padá při
-         vyloučení BlishHud assets -->
     <PackageReference Include="System.ComponentModel.Composition" Version="6.0.0" />
-    <!-- WinRT API (Windows OCR + OneCore TTS) pro .NET Framework -->
     <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.22621.3233" />
-    <!-- přehrávání MP3 z Edge neural TTS -->
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="System.Drawing" />
-    <!-- JavaScriptSerializer (překlad + katalog JSON) -->
     <Reference Include="System.Web.Extensions" />
   </ItemGroup>
 
-  <!-- manifest.json a ref/ ikony patří do výstupu, aby je oficiální
-       .bhm target zabalil do modulu -->
   <ItemGroup>
     <None Update="manifest.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
