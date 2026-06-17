@@ -6,7 +6,6 @@
     <AssemblyName>LorebookReader</AssemblyName>
     <RootNamespace>Frtal.LorebookReader</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RestorePackagesPath>pkg</RestorePackagesPath>
   </PropertyGroup>
 
   <ItemGroup>
