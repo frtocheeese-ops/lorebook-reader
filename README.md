@@ -7,19 +7,22 @@ you've read — so you can keep playing while you listen to the story.
 ## What It Looks Like
 
 ### Open a lorebook → three action buttons appear
-![Lorebook with buttons](screenshots/lorebook_with_buttons.png)
+<img width="505" height="640" alt="image" src="https://github.com/user-attachments/assets/48e3e5bf-afb4-4df6-8164-3a8dd4570be6" />
+
 
 Click **🔊** to read aloud + save, **💾** to save only, or **📎** to
 append this page to the last saved book.
 
 ### Subtitles while playing
-![Subtitles in-game](screenshots/subtitles_ingame.png)
+<img width="685" height="391" alt="image (1)" src="https://github.com/user-attachments/assets/dcab43ed-8268-406b-b51f-687eadd329db" />
+
 
 Optional on-screen captions with full diacritics, adjustable size and
 position.
 
 ### Encyclopedia — your personal lorebook collection
-![Encyclopedia](screenshots/encyclopedia.png)
+<img width="685" height="520" alt="image (2)" src="https://github.com/user-attachments/assets/1530cf62-998f-4283-8124-58a381e22408" />
+
 
 Search, sort, tag, edit, translate, and replay any book you've saved.
 
@@ -127,8 +130,9 @@ If unavailable, the module falls back to the original text.
 
 All settings are accessible in Blish HUD → Manage Modules → Lorebook
 Reader → Settings (gear icon).
+<img width="685" height="509" alt="image (3)" src="https://github.com/user-attachments/assets/1caa3385-3349-4070-952c-eeedd52da163" />
 
-![Settings](screenshots/settings.png)
+
 
 ### Keybinds
 | Setting | Default | Description |
