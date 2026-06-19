@@ -4,79 +4,255 @@ A [Blish HUD](https://blishhud.com) module for **Guild Wars 2** that reads
 open lorebooks aloud and keeps a searchable encyclopedia of everything
 you've read — so you can keep playing while you listen to the story.
 
-![icon](ref/book.png)
+## What It Looks Like
+
+### Open a lorebook → three action buttons appear
+![Lorebook with buttons](screenshots/lorebook_with_buttons.png)
+
+Click **🔊** to read aloud + save, **💾** to save only, or **📎** to
+append this page to the last saved book.
+
+### Subtitles while playing
+![Subtitles in-game](screenshots/subtitles_ingame.png)
+
+Optional on-screen captions with full diacritics, adjustable size and
+position.
+
+### Encyclopedia — your personal lorebook collection
+![Encyclopedia](screenshots/encyclopedia.png)
+
+Search, sort, tag, edit, translate, and replay any book you've saved.
 
 ## Features
 
-- **Read aloud** — open a lorebook in-game and press a keybind (default
-  `Ctrl+Alt+R`) or click the speaker icon next to the book. The text is
-  captured with on-screen OCR and read with text-to-speech, so your
-  gameplay is never interrupted.
-- **On-screen subtitles** — optional captions in a Guild Wars 2-style
-  font with adjustable size, opacity and drag-to-place position. Full
-  diacritics for every language.
-- **Encyclopedia** — every book you read is saved to a searchable,
-  sortable catalog. Add color tags, edit titles, record metadata
-  (expansion, theme, where you found it), fix OCR errors, append later
-  pages, and read any saved book again on demand.
-- **Voices** — uses your installed offline Windows voices by default.
-  Optional online neural voices (Microsoft Edge) are available as an
-  opt-in for more natural narration.
-- **Translation** — optional translation of subtitles and/or speech into
-  a range of languages (opt-in, uses a free online service).
-- **Export / import** — share your encyclopedia with friends as a JSON
-  file.
+### 📖 Read Aloud
+Open a lorebook in-game and press a keybind (default `Ctrl+Alt+R`) or
+click the speaker icon that appears next to the book. The module captures
+the text with on-screen OCR and reads it with text-to-speech while you
+keep playing.
 
-## Privacy & third-party services
+### 💾 Quick-Save & Append
+Three clickable icons appear next to every detected lorebook:
+- **🔊 Speaker** — read aloud and save to encyclopedia
+- **💾 Save** — save to encyclopedia without reading (useful when you
+  want to read it yourself but keep it for later)
+- **📎 Append** — append the current page to the last saved book (for
+  multi-page lorebooks that spread across several pages)
 
-By default everything runs **locally** on your machine (Windows OCR and
-Windows offline voices). Two optional features send text to third-party
-online services, and are **off by default**:
+### 💬 Subtitles
+Optional on-screen subtitles displayed while reading:
+- Full diacritics for all languages (uses GDI+ rendering, not the
+  limited in-game font)
+- Adjustable font size (Small / Medium / Large / Huge)
+- Adjustable opacity (20–100%)
+- Drag-to-place positioning — click "Edit subtitle position" in
+  settings, drag the sample text where you want it
+- Shadow rendering for readability over any background
 
-- **Edge neural voices** — sends the book text to a free Microsoft
-  speech endpoint to synthesize higher-quality narration.
-- **Translation** — sends the book text to a free online translation
-  endpoint.
+### 📚 Encyclopedia
+Every book you read or save is stored in a searchable, sortable catalog:
+- **Search** across titles, text, and all metadata
+- **Sort** by newest, oldest, title A–Z / Z–A, or color tag
+- **Color tags** — tag books with colors (Red, Orange, Yellow, Green,
+  Blue, Purple, Teal) for visual organization
+- **Metadata** — record expansion, theme, location where you found it,
+  and free-form notes
+- **Edit text** — fix OCR errors or typos directly in the encyclopedia
+- **Translate** — translate any saved book into 11 languages and store
+  the translation alongside the original
+- **Preview** — read books on a parchment-style panel with adjustable
+  font size (A+ / A−)
+- **Replay** — play any saved book through TTS at any time
+- **Export / Import** — share your collection with friends as a JSON file
 
-Both are clearly marked in the settings and must be enabled manually. If
-either service is unavailable, the module automatically falls back to the
-offline voice or the original text.
+Access the encyclopedia by clicking the **book icon** in the top-left
+Blish HUD icon bar.
 
-## Requirements
+### 🗣️ Voice Options
+Two voice engines are available:
 
-- Guild Wars 2 running in **Windowed Fullscreen** (the default)
-- Blish HUD 1.2 or newer
-- Windows 10/11 (uses built-in Windows OCR and speech)
-- For best OCR, install the language pack matching your GW2 client
-  language under *Settings → Time & Language*
+| Engine | Privacy | Quality | Requires |
+|--------|---------|---------|----------|
+| **Windows voices** (default) | Fully offline — nothing leaves your PC | Functional | Windows speech voices installed |
+| **Edge neural voices** (opt-in) | Sends text to Microsoft endpoint | Natural, human-like | Internet connection |
+
+The module defaults to **Windows voices** (offline). Edge neural voices
+must be explicitly enabled in settings. If the online service is ever
+unavailable, the module automatically falls back to the offline voice.
+
+Available neural voices include English (US, GB, AU), German, French,
+and Spanish — both male and female options.
+
+### 🌍 Translation
+Optionally translate the narration and/or subtitles into another
+language. Three modes:
+
+| Mode | What it does |
+|------|-------------|
+| **Off** (default) | No translation — original text only |
+| **Subtitles only** | Speech stays in original language, subtitles show translation |
+| **Subtitles + speech** | Both subtitles and speech are translated; voice automatically switches to a native speaker for the target language |
+
+Supported languages: Czech, German, Spanish, French, Italian, Polish,
+Portuguese, Russian, Japanese, Korean, Chinese.
+
+Translation uses a free online endpoint and must be explicitly enabled.
+If unavailable, the module falls back to the original text.
 
 ## Installation
 
-Once released, install via Blish HUD's built-in module repository:
-open the Blish HUD menu → **Manage Modules** → find *Lorebook Reader* →
-install and enable.
+1. Install [Blish HUD](https://blishhud.com) if you haven't already.
+2. In Blish HUD, open the menu → **Manage Modules**.
+3. Search for **Lorebook Reader** → install and enable.
 
 ## Usage
 
-1. Open a lorebook in-game.
-2. Press `Ctrl+Alt+R` (rebindable) or click the speaker icon by the book.
-3. Click the book icon in the top-left icon bar to open the
-   **Encyclopedia** and browse everything you've read.
+### Reading a Lorebook
+1. Open any lorebook in-game (click on it in the world).
+2. Three small icons appear to the right of the book:
+   - Click **🔊** to read aloud + save
+   - Click **💾** to save only
+   - Click **📎** to append this page to the last saved book
+3. Or press **Ctrl+Alt+R** (rebindable) to read the currently open book.
+4. Press **Ctrl+Alt+S** (rebindable) to stop reading at any time.
 
-## Building from source
+### Using the Encyclopedia
+1. Click the **book icon** in the top-left Blish HUD icon bar.
+2. Browse, search, or filter your saved lorebooks.
+3. Click any book to preview it on parchment.
+4. Use **▶ Play** to hear it again, **Edit** to fix text or add metadata.
+5. **Export** your collection to share, **Import** to merge a friend's.
 
-Requires Visual Studio 2022 with the *.NET desktop development* workload
-and the *.NET Framework 4.7.2 targeting pack*. Open `LorebookReader.csproj`,
-restore NuGet packages, and build. The output `bin\LorebookReader.bhm`
-is the installable module.
+## Settings
+
+All settings are accessible in Blish HUD → Manage Modules → Lorebook
+Reader → Settings (gear icon).
+
+![Settings](screenshots/settings.png)
+
+### Keybinds
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Read lorebook | `Ctrl+Alt+R` | Captures and reads the open lorebook |
+| Stop reading | `Ctrl+Alt+S` | Stops current TTS playback |
+
+### Detection
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Show speaker icon on open books | On | Display clickable icons next to detected lorebooks |
+
+### Voice
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Voice engine | Windows (offline) | Choose between offline Windows voices or online Edge neural voices |
+| Windows voice | (auto) | Pick a specific installed voice, or leave on auto to match OCR language |
+| Edge neural voice | en-GB-RyanNeural | Select from curated list of natural-sounding voices |
+| Speaking rate | 1.0× | Speed of narration (0.5× to 2.0×) |
+
+### OCR
+| Setting | Default | Description |
+|---------|---------|-------------|
+| OCR language | en-US | Must match your GW2 client language for best accuracy. Options depend on installed Windows language packs |
+
+### Subtitles
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Show subtitles | On | Display text overlay while reading |
+| Subtitle opacity | 90% | Transparency of subtitle background |
+| Subtitle position X/Y | 50% / 82% | Position on screen (or drag in edit mode) |
+| Subtitle size | Medium (24) | Small (18) / Medium (24) / Large (32) / Huge (36) |
+| Edit position | — | Enter drag mode to reposition subtitles with mouse |
+
+### Translation
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Translation | Off | Off / Subtitles only / Subtitles + speech |
+| Translate to | Czech | Target language for translation |
+
+### Catalog
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Catalog size | 10 | Maximum number of books to keep (5–100) |
+
+## Privacy & Third-Party Services
+
+By default **everything runs locally** on your machine:
+- **OCR**: Windows built-in OCR engine (no data sent anywhere)
+- **Voices**: Windows offline TTS voices (no data sent anywhere)
+
+Two optional features send text to third-party online services and are
+**off by default**:
+
+- **Edge neural voices** — sends book text to a free Microsoft speech
+  endpoint (the same one used by Edge browser's Read Aloud feature).
+  Clearly marked in settings as "(online)".
+- **Translation** — sends book text to a free online translation
+  endpoint. Clearly marked in settings.
+
+Both must be explicitly enabled by the user. Both are clearly labeled in
+the settings UI. If either service is unavailable, the module
+automatically falls back to the offline voice or original text.
+
+**The module does not read game memory.** It works purely via screenshot
+capture and OCR overlay, which is permitted by ArenaNet's Terms of
+Service.
+
+## Known Issues
+As the module checks for a specific pattern and brightness marks, 
+it may occur that the three buttons appear on some surfaces similiar to the parchment texture.
+However, since the scan is performed in a matter of seconds it shouldn't be very noticable.
+
+## Requirements
+
+- [Blish HUD](https://blishhud.com) 1.2 or newer
+- Guild Wars 2 in **Windowed Fullscreen** mode (the default)
+- Windows 10 or 11
+- For best OCR accuracy: install the Windows language pack matching your
+  GW2 client language (Settings → Time & Language → Language & region →
+  Add a language)
+
+## How It Works (Technical)
+
+The module captures a screenshot of the GW2 client area, detects the
+lorebook parchment using luminance + chromaticity analysis, crops the
+text region, runs Windows OCR on it, cleans up the result, and feeds it
+to the selected TTS engine. Everything happens in the background — your
+gameplay is never interrupted.
+
+## Building from Source
+
+Requires:
+- Visual Studio 2022 with the *.NET desktop development* workload
+- .NET Framework 4.8 targeting pack
+
+```
+git clone https://github.com/frtocheeese-ops/lorebook-reader.git
+cd lorebook-reader
+dotnet restore
+dotnet build
+```
+
+The output `bin\Debug\net48\LorebookReader.bhm` is the installable module
+file. Copy it to your Blish HUD modules folder to test.
+
+### Note for module developers
+
+The csproj includes a `ForceRestore` MSBuild target that ensures NuGet
+restore runs before build. This is required because the SSRD build host
+does not run `dotnet restore` for SDK-style projects. Without this
+target, SSRD builds fail with `NETSDK1004`. See the
+[release notes](https://github.com/frtocheeese-ops/lorebook-reader/releases)
+for details.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — Copyright (c) 2026 Vrae (cheeese.8640)
 
 ## Acknowledgements
 
-Built on the [Blish HUD](https://blishhud.com) module framework. Neural
-voice synthesis uses the same endpoint as Microsoft Edge's Read Aloud;
-translation uses a free Google Translate endpoint. Neither is an official,
-supported API.
+Built on the [Blish HUD](https://blishhud.com) module framework.
+
+Neural voice synthesis uses the same endpoint as Microsoft Edge's Read
+Aloud feature. Translation uses a free Google Translate endpoint.
+Neither is an official, supported API — they are opt-in features that
+may become unavailable at any time.
