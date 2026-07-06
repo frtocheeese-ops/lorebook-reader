@@ -41,6 +41,9 @@ namespace Frtal.LorebookReader {
         private SettingEntry<string>     _translateMode;     // off/subtitles/full
         private SettingEntry<string>     _translateTarget;   // kód jazyka
         private SettingEntry<int>        _historyCapacity;
+        private SettingEntry<bool>       _conversationCapture; // conversation OCR toggle
+        private SettingEntry<KeyBinding> _convToggleKeybind;   // keybind pro toggle
+        private SettingEntry<KeyBinding> _debugDumpKeybind;    // P1.1: debug capture
 
         // přístup pro LorebookSettingsView
         internal SettingEntry<KeyBinding> ReadKeybindSetting       => _readKeybind;
@@ -59,6 +62,9 @@ namespace Frtal.LorebookReader {
         internal SettingEntry<string>     TranslateModeSetting     => _translateMode;
         internal SettingEntry<string>     TranslateTargetSetting   => _translateTarget;
         internal SettingEntry<int>        HistoryCapacitySetting   => _historyCapacity;
+        internal SettingEntry<bool>       ConversationCaptureSetting => _conversationCapture;
+        internal SettingEntry<KeyBinding> ConvToggleKeybindSetting   => _convToggleKeybind;
+        internal SettingEntry<KeyBinding> DebugDumpKeybindSetting    => _debugDumpKeybind;
 
         // --- stav ---
         private TtsService _tts;
@@ -91,6 +97,10 @@ namespace Frtal.LorebookReader {
         private volatile bool _bookVisible;
         private Rectangle _bookBox;          // v pixelech klientské oblasti GW2
         private Rectangle _gw2ClientRect;    // velikost klientské oblasti
+
+        // conversation detection
+        private volatile bool _convVisible;
+        private Rectangle _convBox;          // konverzační panel
 
         [ImportingConstructor]
         public LorebookReaderModule(
@@ -184,6 +194,30 @@ namespace Frtal.LorebookReader {
                 "HistoryCapacity", 10,
                 () => "History size",
                 () => "How many recently read lorebooks to keep.");
+
+            _conversationCapture = settings.DefineSetting(
+                "ConversationCapture", false,
+                () => "Conversation capture mode",
+                () => "When enabled, also detects NPC dialogue windows "
+                    + "(not just lorebooks). Useful for saving story "
+                    + "conversations to the encyclopedia.");
+
+            _convToggleKeybind = settings.DefineSetting(
+                "ConvToggleKeybind",
+                new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.C),
+                () => "Toggle conversation capture",
+                () => "Quickly turn conversation capture on/off during gameplay.");
+
+            // P1.1: debug dump — vrací se schopnost z Python prototypu.
+            // Ukládá kompletní důkazní materiál pro kalibraci detektorů
+            // a použitelné community bug reporty.
+            _debugDumpKeybind = settings.DefineSetting(
+                "DebugDumpKeybind",
+                new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.D),
+                () => "Save debug capture",
+                () => "Saves the current frame, detector results and OCR "
+                    + "output to the lorebook_reader\\debug folder. "
+                    + "Attach that folder to bug reports.");
         }
 
         protected override async Task LoadAsync() {
@@ -206,6 +240,18 @@ namespace Frtal.LorebookReader {
             _readKeybind.Value.Activated += OnReadActivated;
             _stopKeybind.Value.Enabled = true;
             _stopKeybind.Value.Activated += OnStopActivated;
+            _convToggleKeybind.Value.Enabled = true;
+            _convToggleKeybind.Value.Activated += OnConvToggleActivated;
+            _debugDumpKeybind.Value.Enabled = true;
+            _debugDumpKeybind.Value.Activated += OnDebugDumpActivated;
+
+            // P0.3: pokud Load() narazil na poškozený katalog, říct to
+            // uživateli — tiché selhání dřív umělo zahodit celou sbírku
+            if (!string.IsNullOrEmpty(_catalog?.LoadWarning)) {
+                Logger.Warn("Catalog load warning: " + _catalog.LoadWarning);
+                ScreenNotification.ShowNotification(
+                    "Lorebook Reader: " + _catalog.LoadWarning);
+            }
 
             _speakerButton = MakeBookButton("speaker", "Read this book aloud",
                 () => StartRead());
@@ -309,6 +355,114 @@ namespace Frtal.LorebookReader {
             _edgeTts?.Stop();
         }
 
+        // P1.1: debug capture — _dumpBusy přes Interlocked (nový kód už
+        // nepíšeme přes obyčejné booly, viz revize P2.4)
+        private int _dumpBusy;
+
+        private void OnDebugDumpActivated(object sender, EventArgs e) {
+            if (System.Threading.Interlocked.CompareExchange(
+                    ref _dumpBusy, 1, 0) != 0) return;
+            Task.Run(DebugDumpAsync);
+        }
+
+        /// <summary>Uloží frame.png + výsledky obou detektorů + výřez +
+        /// raw/očištěný OCR text do lorebook_reader\debug\dump_&lt;čas&gt;.
+        /// Běží oba detektory bez ohledu na conversation toggle — je to
+        /// diagnostika; stav toggle se zapisuje do info.txt.</summary>
+        private async Task DebugDumpAsync() {
+            try {
+                string root = ModuleParameters.DirectoriesManager
+                    .GetFullDirectoryPath("lorebook_reader");
+                string dir = System.IO.Path.Combine(root, "debug",
+                    "dump_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                System.IO.Directory.CreateDirectory(dir);
+
+                var info = new System.Text.StringBuilder();
+                info.AppendLine("Lorebook Reader debug capture");
+                info.AppendLine("Time: " + DateTime.Now.ToString("o"));
+                info.AppendLine("Module version: "
+                    + ModuleParameters.Manifest.Version);
+                info.AppendLine("OCR language: " + _ocrLanguage.Value);
+                info.AppendLine("Conversation capture: "
+                    + (_conversationCapture.Value ? "ON" : "OFF"));
+
+                IntPtr hwnd = GameService.GameIntegration
+                    .Gw2Instance.Gw2WindowHandle;
+                using (Bitmap screen =
+                           ScreenCapture.Grab(hwnd, out Rectangle _)) {
+                    info.AppendLine(
+                        $"Client area: {screen.Width}x{screen.Height}");
+                    screen.Save(System.IO.Path.Combine(dir, "frame.png"),
+                        System.Drawing.Imaging.ImageFormat.Png);
+
+                    Rectangle? parch =
+                        ParchmentDetector.Find(screen, out double pSol);
+                    info.AppendLine(parch != null
+                        ? $"ParchmentDetector: {parch} solidity {pSol:0.000}"
+                        : "ParchmentDetector: no hit");
+
+                    Rectangle? conv =
+                        ConversationDetector.Find(screen, out double cSol);
+                    info.AppendLine(conv != null
+                        ? $"ConversationDetector: {conv} solidity {cSol:0.000}"
+                        : "ConversationDetector: no hit");
+
+                    // stejná priorita jako CaptureBookAsync: pergamen první
+                    bool isConversation = parch == null && conv != null;
+                    Rectangle? box = parch ?? conv;
+
+                    if (box != null) {
+                        Rectangle inner = isConversation
+                            ? ConversationDetector.TextCrop(box.Value)
+                            : ParchmentDetector.InnerCrop(box.Value);
+                        info.AppendLine("Detector used: "
+                            + (isConversation ? "conversation" : "parchment"));
+                        info.AppendLine($"Text crop: {inner}");
+
+                        using (Bitmap crop =
+                                   screen.Clone(inner, screen.PixelFormat)) {
+                            crop.Save(
+                                System.IO.Path.Combine(dir, "crop.png"),
+                                System.Drawing.Imaging.ImageFormat.Png);
+                            string raw = await OcrService.RecognizeAsync(
+                                crop, _ocrLanguage.Value,
+                                invert: isConversation);
+                            System.IO.File.WriteAllText(
+                                System.IO.Path.Combine(dir, "ocr_raw.txt"),
+                                raw ?? "");
+                            System.IO.File.WriteAllText(
+                                System.IO.Path.Combine(dir, "ocr_clean.txt"),
+                                TextCleaner.CleanForTts(raw ?? ""));
+                        }
+                    } else {
+                        info.AppendLine("No panel detected — frame.png "
+                            + "saved for calibration.");
+                    }
+                }
+
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(dir, "info.txt"), info.ToString());
+                ScreenNotification.ShowNotification(
+                    "Debug capture saved: debug\\"
+                    + System.IO.Path.GetFileName(dir));
+                Logger.Info("Debug capture saved to " + dir);
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Debug capture failed.");
+                ScreenNotification.ShowNotification(
+                    "Debug capture failed: " + ex.Message);
+            } finally {
+                System.Threading.Interlocked.Exchange(ref _dumpBusy, 0);
+            }
+        }
+
+        private void OnConvToggleActivated(object sender, EventArgs e) {
+            _conversationCapture.Value = !_conversationCapture.Value;
+            string state = _conversationCapture.Value ? "ON" : "OFF";
+            ScreenNotification.ShowNotification(
+                $"Conversation capture: {state}");
+            if (!_conversationCapture.Value) _convVisible = false;
+        }
+
         private void StartRead() {
             if (_readBusy) return;
             _readBusy = true;
@@ -361,23 +515,47 @@ namespace Frtal.LorebookReader {
 
             IntPtr hwnd = GameService.GameIntegration.Gw2Instance.Gw2WindowHandle;
             using (Bitmap screen = ScreenCapture.Grab(hwnd, out Rectangle screenRect)) {
+
+                // 1) Zkusit pergamenový lorebook (priorita)
                 Rectangle? box = ParchmentDetector.Find(screen, out double solidity);
+                bool isConversation = false;
+
+                if (box != null) {
+                    Logger.Info($"Parchment {box} solidity {solidity:0.00}");
+                } else if (_conversationCapture.Value) {
+                    // 2) Zkusit konverzační dialog
+                    box = ConversationDetector.Find(screen, out solidity);
+                    if (box != null) {
+                        isConversation = true;
+                        Logger.Info($"Conversation {box} solidity {solidity:0.00}");
+                    }
+                }
+
                 if (box == null) {
+                    // fallback — střed obrazovky
                     box = new Rectangle(
                         (int)(screen.Width * 0.34), (int)(screen.Height * 0.12),
                         (int)(screen.Width * 0.32), (int)(screen.Height * 0.80));
-                    Logger.Info("Parchment not detected, using center fallback.");
-                } else {
-                    Logger.Info($"Parchment {box} solidity {solidity:0.00}");
+                    Logger.Info("Neither parchment nor conversation detected, using center fallback.");
                 }
 
-                Rectangle inner = ParchmentDetector.InnerCrop(box.Value);
+                // Oříznout podle typu detekce
+                Rectangle inner = isConversation
+                    ? ConversationDetector.TextCrop(box.Value)
+                    : ParchmentDetector.InnerCrop(box.Value);
+
                 using (Bitmap crop = screen.Clone(inner, screen.PixelFormat)) {
+                    // Konverzace = světlý text na tmavém → invertovat pro OCR
                     string raw = await OcrService.RecognizeAsync(
-                        crop, _ocrLanguage.Value);
+                        crop, _ocrLanguage.Value, invert: isConversation);
                     text = TextCleaner.CleanForTts(raw);
                 }
-                title = TryReadHeader(screen, box.Value);
+
+                // Nadpis: u pergamenu čteme header nad knížkou,
+                // u konverzace se pokusíme přečíst NPC jméno (vpravo od dialogu)
+                title = isConversation
+                    ? TryReadNpcName(screen, box.Value)
+                    : TryReadHeader(screen, box.Value);
             }
 
             if (text.Length < 20) {
@@ -518,6 +696,39 @@ namespace Frtal.LorebookReader {
             }
         }
 
+        /// <summary>Pokusí se přečíst jméno NPC z tmavého labelu vpravo
+        /// od konverzačního panelu (invertovaný OCR).</summary>
+        private string TryReadNpcName(Bitmap screen, Rectangle convBox) {
+            try {
+                // NPC label je v pravé části panelu, vertikálně uprostřed
+                int labelW = (int)(convBox.Width * 0.30);
+                int labelH = (int)(convBox.Height * 0.15);
+                int lx = convBox.Right - labelW;
+                int ly = convBox.Y + (int)(convBox.Height * 0.35);
+                // ověřit, že nevypadáváme z obrazovky
+                lx = Math.Max(0, Math.Min(lx, screen.Width - labelW));
+                ly = Math.Max(0, Math.Min(ly, screen.Height - labelH));
+                labelW = Math.Min(labelW, screen.Width - lx);
+                labelH = Math.Min(labelH, screen.Height - ly);
+                if (labelW < 20 || labelH < 10) return null;
+
+                var labelRect = new Rectangle(lx, ly, labelW, labelH);
+                using (Bitmap labelCrop =
+                           screen.Clone(labelRect, screen.PixelFormat)) {
+                    // NPC jméno je bílý text na tmavém pozadí → invertovat
+                    string raw = OcrService.RecognizeLineAsync(
+                        labelCrop, _ocrLanguage.Value).GetAwaiter().GetResult();
+                    raw = (raw ?? "").Trim();
+                    // NPC jméno bývá 2-40 znaků
+                    if (raw.Length < 2 || raw.Length > 40) return null;
+                    return raw;
+                }
+            } catch (Exception ex) {
+                Logger.Debug(ex, "NPC name OCR failed.");
+                return null;
+            }
+        }
+
         // přehrání uloženého lorebooku z historie (volá settings view)
         internal void PlayFromCatalog(LorebookEntry entry) {
             if (entry == null || _readBusy) return;
@@ -644,12 +855,27 @@ namespace Frtal.LorebookReader {
 
             // aplikace výsledku detekce na UI (jen v Update threadu)
             if (_speakerButton != null) {
+                bool showButtons = false;
+                Rectangle activeBox = default;
+
                 if (_bookVisible && _gw2ClientRect.Width > 0) {
+                    activeBox = _bookBox;
+                    showButtons = true;
+                } else if (_convVisible && _gw2ClientRect.Width > 0) {
+                    activeBox = _convBox;
+                    showButtons = true;
+                }
+
+                if (showButtons) {
                     var sprite = GameService.Graphics.SpriteScreen.Size;
                     float scaleX = (float)sprite.X / _gw2ClientRect.Width;
                     float scaleY = (float)sprite.Y / _gw2ClientRect.Height;
-                    int x = (int)((_bookBox.Right) * scaleX) + 6;
-                    int y = (int)(_bookBox.Top * scaleY);
+                    // Konverzace: tlačítka dál doprava (za NPC jméno/portrét)
+                    int extraOffset = _convVisible
+                        ? (int)(activeBox.Width * scaleX * 0.18)
+                        : 6;
+                    int x = (int)(activeBox.Right * scaleX) + extraOffset;
+                    int y = (int)(activeBox.Top * scaleY);
                     int bx = Math.Min(x, sprite.X - _speakerButton.Width);
                     // tři ikony pod sebou: číst / uložit / připojit
                     _speakerButton.Location = new Point(bx, Math.Max(0, y));
@@ -670,18 +896,34 @@ namespace Frtal.LorebookReader {
             try {
                 IntPtr hwnd = GameService.GameIntegration.Gw2Instance.Gw2WindowHandle;
                 using (Bitmap screen = ScreenCapture.Grab(hwnd, out Rectangle screenRect)) {
+                    _gw2ClientRect = new Rectangle(0, 0, screen.Width, screen.Height);
+
+                    // 1) Vždy zkusit pergamen (priorita — lorebooky)
                     Rectangle? box = ParchmentDetector.Find(screen, out _);
                     if (box != null) {
                         _bookBox = box.Value;
-                        _gw2ClientRect = new Rectangle(0, 0, screen.Width, screen.Height);
                         _bookVisible = true;
-                    } else {
-                        _bookVisible = false;
+                        _convVisible = false;
+                        return;
                     }
+                    _bookVisible = false;
+
+                    // 2) Pokud conversation mode je ON a pergamen nenalezen,
+                    //    zkusit konverzační dialog
+                    if (_conversationCapture.Value) {
+                        Rectangle? conv = ConversationDetector.Find(screen, out _);
+                        if (conv != null) {
+                            _convBox = conv.Value;
+                            _convVisible = true;
+                            return;
+                        }
+                    }
+                    _convVisible = false;
                 }
             } catch (Exception ex) {
                 Logger.Debug(ex, "Button detection failed.");
                 _bookVisible = false;
+                _convVisible = false;
             } finally {
                 _detectBusy = false;
             }
@@ -690,6 +932,8 @@ namespace Frtal.LorebookReader {
         protected override void Unload() {
             _readKeybind.Value.Activated -= OnReadActivated;
             _stopKeybind.Value.Activated -= OnStopActivated;
+            _convToggleKeybind.Value.Activated -= OnConvToggleActivated;
+            _debugDumpKeybind.Value.Activated -= OnDebugDumpActivated;
             _speakerButton?.Dispose();
             _saveButton?.Dispose();
             _appendButton?.Dispose();

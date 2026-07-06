@@ -1,6 +1,6 @@
 {
   "name": "Lorebook Reader",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "namespace": "vrae.lorebook_reader",
   "package": "LorebookReader.dll",
   "manifest_version": 1,

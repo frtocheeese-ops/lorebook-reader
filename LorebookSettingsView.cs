@@ -58,6 +58,29 @@ namespace Frtal.LorebookReader {
             speakerCheckbox.CheckedChanged += (s, e) =>
                 _module.ShowSpeakerButtonSetting.Value = e.Checked;
 
+            // --- conversation capture ---
+            var convCheckbox = new Checkbox {
+                Text    = "Conversation capture mode (also detect NPC dialogues)",
+                Checked = _module.ConversationCaptureSetting.Value,
+                Parent  = panel
+            };
+            convCheckbox.CheckedChanged += (s, e) =>
+                _module.ConversationCaptureSetting.Value = e.Checked;
+            // sync: když se setting změní přes keybind, aktualizovat checkbox
+            _module.ConversationCaptureSetting.SettingChanged += (s, e) =>
+                convCheckbox.Checked = e.NewValue;
+
+            new KeybindingAssigner(_module.ConvToggleKeybindSetting.Value) {
+                KeyBindingName = "Toggle conversation capture",
+                Parent         = panel
+            };
+
+            // P1.1: debug capture pro kalibraci a bug reporty
+            new KeybindingAssigner(_module.DebugDumpKeybindSetting.Value) {
+                KeyBindingName = "Save debug capture",
+                Parent         = panel
+            };
+
             // --- volba TTS enginu ---
             new Label {
                 Text           = "Voice engine",

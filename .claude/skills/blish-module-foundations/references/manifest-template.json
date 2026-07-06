@@ -1,0 +1,14 @@
+{
+  "name": "Module Name",
+  "version": "0.1.0",
+  "namespace": "vrae.module_name",
+  "package": "ModuleName.dll",
+  "manifest_version": 1,
+  "description": "One-sentence description shown in the Blish HUD module list.",
+  "url": "https://github.com/frtocheeese-ops/module-name",
+  "contributors": [
+    { "name": "Vrae", "username": "cheeese.8640" }
+  ],
+  "dependencies": { "bh.blishhud": "^1.2.0" },
+  "directories": [ "module_name" ]
+}

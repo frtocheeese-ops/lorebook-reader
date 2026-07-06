@@ -88,6 +88,15 @@ namespace Frtal.LorebookReader {
         private int _capacity;
         private readonly object _lock = new object();
 
+        // P0.3: když se poškozený catalog.json nepodaří odklidit do karantény,
+        // Save() se zablokuje, aby data nepřepsal prázdným seznamem
+        private bool _saveBlocked;
+
+        /// <summary>Neprázdné, když Load() narazil na problém, o kterém má
+        /// uživatel vědět (poškozený soubor, obnova ze zálohy…).
+        /// Modul to po startu zobrazí jako notifikaci.</summary>
+        public string LoadWarning { get; private set; }
+
         public event Action Changed;
 
         public LorebookCatalog(string directory, int capacity) {
@@ -293,32 +302,109 @@ namespace Frtal.LorebookReader {
             !string.IsNullOrEmpty(haystack) &&
             haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
 
+        /// <summary>Má záznam uživatelská metadata (štítek, poznámky…)?
+        /// Takové knihy capacity trim nikdy nemaže — uživatel do nich
+        /// investoval práci. Uložený překlad je derivát (jde vygenerovat
+        /// znovu), proto knihu před trimem nechrání.</summary>
+        private static bool HasUserMetadata(LorebookEntry e) =>
+            (!string.IsNullOrWhiteSpace(e.ColorTag)
+                && !string.Equals(e.ColorTag, "None",
+                    StringComparison.OrdinalIgnoreCase))
+            || !string.IsNullOrWhiteSpace(e.Notes)
+            || !string.IsNullOrWhiteSpace(e.Theme)
+            || !string.IsNullOrWhiteSpace(e.Expansion)
+            || !string.IsNullOrWhiteSpace(e.Location)
+            || !string.IsNullOrWhiteSpace(e.IconKey);
+
         private void TrimToCapacity() {
-            while (_entries.Count > _capacity)
-                _entries.RemoveAt(_entries.Count - 1);
+            // maže se od konce seznamu (nejstarší), auto-záznamy napřed;
+            // když zbývají jen otagované knihy, kapacita se smí přešvihnout
+            for (int i = _entries.Count - 1;
+                 i >= 0 && _entries.Count > _capacity; i--) {
+                if (!HasUserMetadata(_entries[i]))
+                    _entries.RemoveAt(i);
+            }
+        }
+
+        private static bool TryLoadFile(string path,
+                                        out List<LorebookEntry> entries) {
+            entries = null;
+            try {
+                var loaded = new JavaScriptSerializer { MaxJsonLength = 64 * 1024 * 1024 }
+                    .Deserialize<List<LorebookEntry>>(File.ReadAllText(path));
+                if (loaded == null) return false; // prázdný/useknutý soubor
+                entries = loaded;
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
+        private void AdoptEntries(List<LorebookEntry> loaded) {
+            _entries.Clear();
+            _entries.AddRange(loaded);
+            foreach (var e in _entries)
+                if (string.IsNullOrWhiteSpace(e.Id))
+                    e.Id = Guid.NewGuid().ToString("N");
         }
 
         private void Load() {
+            if (!File.Exists(_filePath)) return;
+
+            // 1) hlavní soubor
+            if (TryLoadFile(_filePath, out var loaded)) {
+                AdoptEntries(loaded);
+                return;
+            }
+
+            // 2) poškozený soubor NIKDY tiše nepřepsat — odklidit do karantény
+            string quarantine = Path.Combine(
+                Path.GetDirectoryName(_filePath) ?? "",
+                "catalog.corrupt-" + DateTime.Now.ToString("yyyyMMdd_HHmmss")
+                + ".json");
             try {
-                if (!File.Exists(_filePath)) return;
-                var loaded = new JavaScriptSerializer { MaxJsonLength = 64 * 1024 * 1024 }
-                    .Deserialize<List<LorebookEntry>>(File.ReadAllText(_filePath));
-                if (loaded != null) {
-                    _entries.Clear();
-                    _entries.AddRange(loaded);
-                    foreach (var e in _entries)
-                        if (string.IsNullOrWhiteSpace(e.Id))
-                            e.Id = Guid.NewGuid().ToString("N");
-                }
-            } catch { /* poškozený soubor -> prázdný katalog */ }
+                File.Move(_filePath, quarantine);
+            } catch {
+                // nejde odklidit (zámek apod.) -> zablokovat ukládání,
+                // jinak by nejbližší Save přepsal obnovitelná data
+                _saveBlocked = true;
+                LoadWarning = "catalog.json is corrupt and could not be "
+                    + "quarantined — saving is disabled to protect it. "
+                    + "Check the lorebook_reader folder manually.";
+                return;
+            }
+
+            // 3) zkusit zálohu z posledního úspěšného Save
+            string bak = _filePath + ".bak";
+            if (File.Exists(bak) && TryLoadFile(bak, out var fromBak)) {
+                AdoptEntries(fromBak);
+                LoadWarning = "catalog.json was corrupt — restored from "
+                    + "backup. Corrupt file kept as "
+                    + Path.GetFileName(quarantine) + ".";
+                Save(); // obnovený stav hned zapsat (atomicky)
+                return;
+            }
+
+            LoadWarning = "catalog.json was corrupt and no usable backup "
+                + "was found — starting empty. Corrupt file kept as "
+                + Path.GetFileName(quarantine) + ".";
         }
 
         private void Save() {
+            if (_saveBlocked) return; // chráníme neodklizený poškozený soubor
             try {
                 string json = new JavaScriptSerializer { MaxJsonLength = 64 * 1024 * 1024 }
                     .Serialize(_entries);
-                File.WriteAllText(_filePath, json);
-            } catch { /* nekritické */ }
+                // atomický zápis: .tmp + File.Replace (nechává .bak);
+                // pád uprostřed zápisu tak nikdy neusekne catalog.json
+                string tmp = _filePath + ".tmp";
+                File.WriteAllText(tmp, json);
+                if (File.Exists(_filePath)) {
+                    File.Replace(tmp, _filePath, _filePath + ".bak");
+                } else {
+                    File.Move(tmp, _filePath);
+                }
+            } catch { /* nekritické — příští Save to zkusí znovu */ }
         }
     }
 }

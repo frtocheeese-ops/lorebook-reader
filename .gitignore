@@ -4,4 +4,6 @@ pkg/
 .vs/
 *.user
 *.suo
+*.slnx
 packages/
+Properties/launchSettings.json
