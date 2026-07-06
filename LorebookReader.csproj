@@ -42,4 +42,35 @@
     </None>
   </ItemGroup>
 
+  <!-- KRITICKÉ: SSRD build host nespouští dotnet restore pro SDK-style
+       projekty — tento target to obejde. BEZ TOHOTO BLOKU BUILD NA
+       SSRD SELŽE s NETSDK1004. Nezměňovat, nemazat. (Invariant č. 1;
+       6.7.2026 se zjistilo, že z lokální kopie omylem vypadl.) -->
+  <Target Name="ForceRestore"
+          BeforeTargets="CollectPackageReferences;ResolvePackageAssets"
+          Condition="!Exists('$(BaseIntermediateOutputPath)project.assets.json') AND '$(ForceRestoreRunning)' != 'true'">
+    <Exec Command="dotnet restore &quot;$(MSBuildProjectFullPath)&quot; -p:ForceRestoreRunning=true" />
+  </Target>
+
+  <!-- Auto-deploy: po vytvoření .bhm (target BuildBlishHUDModule z
+       BlishHUD balíčku) ho zkopíruje do lokální Blish HUD modules
+       složky. Cesta je machine-specific, proto se definuje jako
+       BlishModulesDir v LorebookReader.csproj.user (netrackuje se,
+       kryje ho *.user v .gitignore). Kde property není (SSRD, CI,
+       cizí stroj), target se přeskočí. Když Blish HUD zrovna běží
+       a .bhm drží zamčený, kopie jen zahlásí warning — build projde. -->
+  <Target Name="CopyBhmToBlishModules"
+          AfterTargets="BuildBlishHUDModule"
+          Condition="'$(BlishModulesDir)' != ''">
+    <Warning Condition="!Exists('$(BlishModulesDir)')"
+             Text="BlishModulesDir '$(BlishModulesDir)' neexistuje — .bhm se nekopíroval. Uprav LorebookReader.csproj.user." />
+    <Copy Condition="Exists('$(BlishModulesDir)')"
+          SourceFiles="$(BlishHUDModuleFilePath)"
+          DestinationFolder="$(BlishModulesDir)"
+          ContinueOnError="WarnAndContinue" />
+    <Message Condition="Exists('$(BlishModulesDir)')"
+             Importance="high"
+             Text="LorebookReader.bhm -> $(BlishModulesDir)" />
+  </Target>
+
 </Project>

@@ -380,8 +380,14 @@ namespace Frtal.LorebookReader {
                 var info = new System.Text.StringBuilder();
                 info.AppendLine("Lorebook Reader debug capture");
                 info.AppendLine("Time: " + DateTime.Now.ToString("o"));
+                // SemVer.Version je jen tranzitivní závislost BlishHUD —
+                // přímé použití typu by chtělo referenci na SemVer assembly,
+                // proto čtení přes reflexi (výsledek je stejně jen string)
                 info.AppendLine("Module version: "
-                    + ModuleParameters.Manifest.Version);
+                    + (ModuleParameters.Manifest.GetType()
+                        .GetProperty("Version")
+                        ?.GetValue(ModuleParameters.Manifest)
+                        ?.ToString() ?? "?"));
                 info.AppendLine("OCR language: " + _ocrLanguage.Value);
                 info.AppendLine("Conversation capture: "
                     + (_conversationCapture.Value ? "ON" : "OFF"));
@@ -401,19 +407,20 @@ namespace Frtal.LorebookReader {
                         ? $"ParchmentDetector: {parch} solidity {pSol:0.000}"
                         : "ParchmentDetector: no hit");
 
-                    Rectangle? conv =
-                        ConversationDetector.Find(screen, out double cSol);
-                    info.AppendLine(conv != null
-                        ? $"ConversationDetector: {conv} solidity {cSol:0.000}"
+                    var convHit = ConversationDetector.FindHit(screen);
+                    info.AppendLine(convHit != null
+                        ? "ConversationDetector: panel " + convHit.Panel
+                          + $" text {convHit.TextArea}"
+                          + $" solidity {convHit.Solidity:0.000}"
                         : "ConversationDetector: no hit");
 
                     // stejná priorita jako CaptureBookAsync: pergamen první
-                    bool isConversation = parch == null && conv != null;
-                    Rectangle? box = parch ?? conv;
+                    bool isConversation = parch == null && convHit != null;
+                    Rectangle? box = parch ?? convHit?.Panel;
 
                     if (box != null) {
                         Rectangle inner = isConversation
-                            ? ConversationDetector.TextCrop(box.Value)
+                            ? convHit.TextArea
                             : ParchmentDetector.InnerCrop(box.Value);
                         info.AppendLine("Detector used: "
                             + (isConversation ? "conversation" : "parchment"));
@@ -519,15 +526,20 @@ namespace Frtal.LorebookReader {
                 // 1) Zkusit pergamenový lorebook (priorita)
                 Rectangle? box = ParchmentDetector.Find(screen, out double solidity);
                 bool isConversation = false;
+                Rectangle? convText = null; // v6: změřená textová oblast
 
                 if (box != null) {
                     Logger.Info($"Parchment {box} solidity {solidity:0.00}");
                 } else if (_conversationCapture.Value) {
                     // 2) Zkusit konverzační dialog
-                    box = ConversationDetector.Find(screen, out solidity);
-                    if (box != null) {
+                    var hit = ConversationDetector.FindHit(screen);
+                    if (hit != null) {
+                        box = hit.Panel;
+                        convText = hit.TextArea;
+                        solidity = hit.Solidity;
                         isConversation = true;
-                        Logger.Info($"Conversation {box} solidity {solidity:0.00}");
+                        Logger.Info($"Conversation panel {hit.Panel} "
+                            + $"text {hit.TextArea} solidity {hit.Solidity:0.00}");
                     }
                 }
 
@@ -539,9 +551,10 @@ namespace Frtal.LorebookReader {
                     Logger.Info("Neither parchment nor conversation detected, using center fallback.");
                 }
 
-                // Oříznout podle typu detekce
+                // Oříznout podle typu detekce (v6: konverzace používá
+                // změřenou TextArea; frakční TextCrop je jen fallback)
                 Rectangle inner = isConversation
-                    ? ConversationDetector.TextCrop(box.Value)
+                    ? (convText ?? ConversationDetector.TextCrop(box.Value))
                     : ParchmentDetector.InnerCrop(box.Value);
 
                 using (Bitmap crop = screen.Clone(inner, screen.PixelFormat)) {

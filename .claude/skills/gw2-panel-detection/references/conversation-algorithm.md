@@ -1,9 +1,8 @@
-# ConversationDetector — exact algorithm (v0.3.0, LOCAL — not on GitHub yet)
+# ConversationDetector — exact algorithm (v0.3.0, branch feature/conversation-capture)
 
-File: `ConversationDetector.cs` in the local working tree (not yet pushed). This document
-records the last calibrated state from the June 2026 sessions. **The local file is
-the source of truth — diff these numbers against it before relying on them.**
-Reached as "v5" after four failed strategies (see History below).
+File: `ConversationDetector.cs`. This document records the calibrated state as of
+2026-07-06 (v6). **The code is the source of truth — diff these numbers against it
+before relying on them.** Reached as "v6" after five superseded strategies (History).
 
 ## Warm-pixel definition (the brown header bar)
 
@@ -29,9 +28,22 @@ Dark bronze/brown — too dark for terrain highlights, too warm for shadows.
      text area**, so most of the text is left of the header. Early symmetric
      expansions (5%/20px, then 12%/15–20%) consistently cut off line endings —
      the words "scared", "It's", "probably" were the recurring evidence.
-6. `TextCrop(panel)`: skip top **6%** (NPC name/title zone), take **55%** of panel
-   height (values tried: 60% → 80% → 55%; 80% leaked the player response options —
-   "Read on." showed up in OCR — 55% excludes them).
+6. **v6 (2026-07-06): the OCR crop is MEASURED, not fraction-derived.**
+   `FindHit()` returns `ConversationHit { Panel, TextArea, Solidity }`.
+   `TextArea` comes from `MeasureTextArea()`: within the calibrated vertical zone
+   (top skip **18%** of panel height, zone height **40%** — these fractions remain
+   the guard against the NPC title/response echo above and the response options
+   below; "Read on." must never enter OCR), it scans the already-computed
+   bright-cell grid in a window **wider than the panel** (−0.10·headerW left,
+   +0.20·headerW right), takes the longest run of text columns (cell = text at
+   ≥ 3 bright px; gaps ≤ 4 cells tolerated as word spacing — bigger gaps separate
+   distant bright UI like the quest tracker), measures min/max text rows on that
+   run (row = text at ≥ 2 text cells), and pads by 2 cells horizontally / 1
+   vertically (WinRT OCR drops words touching the crop edge). Empty measurement →
+   fraction fallback (`TextCrop`, now fallback-only).
+   *Evidence:* dump_20260706_093527 @2560×1440 — text ended at x≈1421, fraction
+   panelRight was 1416 → OCR dropped the final word "was"; measured TextArea also
+   trims ~220 px of background noise on the left.
 7. Action buttons are placed with an **18% panel-width offset** so they never overlap
    the region OCR reads.
 
@@ -48,7 +60,8 @@ inverted). If you see garbage OCR from conversations, check the invert flag firs
 | v1–v2 | dark-pixel panel mass | dark caves/night = everything is "panel" |
 | v3 | bright-on-dark text blocks | bright terrain & UI text everywhere |
 | v4 | warm strip, no structure checks | warm terrain textures (wood, cliffs) |
-| v5 | warm strip + thin + isolated + text-below | current — survives the corpus of real 1440p screenshots |
+| v5 | warm strip + thin + isolated + text-below | panel-fraction OCR crop truncated edge words ("scared", "It's", "probably", "was") |
+| v6 | v5 detection + TextArea measured from bright-cell extents (`ConversationHit`) | current — fixes edge truncation, trims background noise; fraction crop kept as fallback |
 
 ## Stable anchors inventory (for future multi-anchor work)
 
