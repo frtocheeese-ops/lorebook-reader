@@ -60,16 +60,30 @@ namespace Frtal.LorebookReader {
             return tex;
         }
 
-        /// <summary>Změří šířku textu bez vykreslení (pro zalamování).</summary>
+        /// <summary>Změří šířku textu bez vykreslení (pro zalamování).
+        /// Používá sdílený measuring context — žádné alokace per volání.</summary>
         public float MeasureWidth(string text, float fontSize, bool bold = false) {
             if (string.IsNullOrEmpty(text)) return 0;
-            using (var bmp = new Bitmap(1, 1))
-            using (var g = Graphics.FromImage(bmp))
-            using (var font = MakeFont(fontSize, bold)) {
-                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                return g.MeasureString(text, font,
-                    int.MaxValue, StringFormat.GenericTypographic).Width;
+            lock (_measureLock) {
+                EnsureMeasureContext();
+                using (var font = MakeFont(fontSize, bold)) {
+                    return _measureGraphics.MeasureString(text, font,
+                        int.MaxValue, StringFormat.GenericTypographic).Width;
+                }
             }
+        }
+
+        // sdílený kontext pro měření (Bitmap 1×1 + Graphics, žije po dobu
+        // rendereru) — MeasureWidth se volá per slovo při zalamování
+        private readonly object _measureLock = new object();
+        private Bitmap _measureBmp;
+        private Graphics _measureGraphics;
+
+        private void EnsureMeasureContext() {
+            if (_measureGraphics != null) return;
+            _measureBmp = new Bitmap(1, 1);
+            _measureGraphics = Graphics.FromImage(_measureBmp);
+            _measureGraphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         }
 
         /// <summary>Zalomí text na řádky podle skutečné GDI šířky.</summary>
@@ -97,9 +111,18 @@ namespace Frtal.LorebookReader {
             return lines;
         }
 
+        // LineHeight se volá z Paint každý snímek → cache podle velikosti
+        private readonly Dictionary<long, float> _lineHeightCache =
+            new Dictionary<long, float>();
+
         public float LineHeight(float fontSize, bool bold = false) {
+            long key = ((long)(fontSize * 10) << 1) | (bold ? 1L : 0L);
+            if (_lineHeightCache.TryGetValue(key, out float h))
+                return h;
             using (var font = MakeFont(fontSize, bold))
-                return font.GetHeight();
+                h = font.GetHeight();
+            _lineHeightCache[key] = h;
+            return h;
         }
 
         // ---------------------------------------------------------------------
@@ -187,6 +210,12 @@ namespace Frtal.LorebookReader {
                 tex.Dispose();
             _cache.Clear();
             _cacheOrder.Clear();
+            lock (_measureLock) {
+                _measureGraphics?.Dispose();
+                _measureBmp?.Dispose();
+                _measureGraphics = null;
+                _measureBmp = null;
+            }
         }
     }
 }

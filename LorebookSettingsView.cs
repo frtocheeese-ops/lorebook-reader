@@ -75,6 +75,37 @@ namespace Frtal.LorebookReader {
                 Parent         = panel
             };
 
+            // --- kalibrace zóny dialogu ---
+            var calibStatus = new Label {
+                Text           = _module.DialogZoneSetting.Value.Length > 0
+                                 ? "Dialogue zone: calibrated"
+                                 : "Dialogue zone: not calibrated",
+                AutoSizeWidth  = true,
+                AutoSizeHeight = true,
+                Parent         = panel
+            };
+            new KeybindingAssigner(_module.CalibrateKeybindSetting.Value) {
+                KeyBindingName = "Calibrate dialogue zone",
+                Parent         = panel
+            };
+            var calibButton = new StandardButton {
+                Text   = "Calibrate dialogue zone (drag a frame)",
+                Width  = 360,
+                Parent = panel
+            };
+            calibButton.Click += (s, e) => _module.StartCalibration();
+            var clearCalibButton = new StandardButton {
+                Text   = "Clear calibration (use auto-detect)",
+                Width  = 360,
+                Parent = panel
+            };
+            clearCalibButton.Click += (s, e) =>
+                _module.DialogZoneSetting.Value = "";
+            _module.DialogZoneSetting.SettingChanged += (s, e) =>
+                calibStatus.Text = !string.IsNullOrEmpty(e.NewValue)
+                    ? "Dialogue zone: calibrated"
+                    : "Dialogue zone: not calibrated";
+
             // P1.1: debug capture pro kalibraci a bug reporty
             new KeybindingAssigner(_module.DebugDumpKeybindSetting.Value) {
                 KeyBindingName = "Save debug capture",

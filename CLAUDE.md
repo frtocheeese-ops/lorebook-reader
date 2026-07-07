@@ -34,6 +34,7 @@ Rebuild after changes: `dotnet build` or in Visual Studio `Ctrl+Alt+F7` (Rebuild
 - `LorebookReaderModule.cs` — module entry point; orchestrates settings, keybinds, detection loop, all three pipelines (Read/SaveOnly/Append), subtitle positioning, encyclopedia window
 - `ConversationDetector.cs` — detects NPC dialogue via warm brown header bar (R>G>B transition) with cold rows above and bright text below (eliminates false positives from game textures)
 - `ParchmentDetector.cs` — detects lorebook parchment (high luminance, low chroma)
+- `DialogZoneCalibrator.cs` — full-screen draggable/resizable frame (Ctrl+Alt+Z) to mark the dialogue text area; the calibrated zone (per resolution) replaces heuristic panel-finding for OCR + button anchoring
 - `OcrService.cs` — Windows.Media.Ocr (WinRT); 2× upscale + grayscale ColorMatrix preprocessing; inverted ColorMatrix for conversation (white-on-dark) text
 - `TextCleaner.cs` — confusable-char fixes, prosodic chunking with tiered split patterns, subtitle word-wrap at 42 chars/line
 - `TtsService.cs` — offline Windows OneCore TTS; `EdgeTtsService.cs` — online Edge neural voices via hand-written RFC6455 WebSocket (`WebSocketLite.cs`), MP3 decoded with NAudio
@@ -44,6 +45,7 @@ Rebuild after changes: `dotnet build` or in Visual Studio `Ctrl+Alt+F7` (Rebuild
 ## Key Technical Decisions
 - **Header bar detection**: warm horizontal strip (R>G>B, R-B≥8, lum 20-80) with cold rows 4-6 above (= game world) and bright pixels 4-12 below (= dialog text). Eliminates false positives from game textures that have warm rows both above and below.
 - **ParchmentDetector** uses luminance+chromaticity (lum>185, chroma<60) with 8×8 cell grid.
+- **Dialogue zone calibration** (v0.3.0): the warm-header heuristic is fragile per-frame (some pages collapse, buttons occasionally mis-anchor). The user marks the narrative text area once per resolution (Ctrl+Alt+Z). When set, `ConversationDetector.MeasureInZone` measures bright text inside the zone (no header search) → tight OCR crop + stable button anchor; heuristic `FindHit` is the fallback when no zone is calibrated. Stored as `DialogZone` setting = `x,y,w,h,resW,resH` in client px (invalidated when resolution changes). Button visibility gates on in-zone bright fraction 0.03–0.6 (text-like, not dark/sky).
 - **OCR confusable chars**: 0↔O, 1↔I/l, |↔I, J→I, 5↔S, 8↔B. Numbers preserved in numeric tokens (sequences, ordinals like 3rd, time after colon).
 - **TTS chunking**: sentence-level (maxLen=200), falls back through semicolons → em-dashes → conjunction commas → any comma → word split.
 - **GDI text rendering** required for diacritics (Blish HUD built-in fonts lack them).
@@ -79,3 +81,4 @@ Test at 2560×1440 resolution. Key test scenarios:
 2. Conversation mode ON (Ctrl+Alt+C) → open NPC dialogue → buttons appear → OCR captures text
 3. Subtitles display with word wrap, TTS reads complete sentences
 4. Encyclopedia saves and replays books correctly
+5. Calibrate dialogue zone (Ctrl+Alt+Z) → drag a frame over the story text → Save → across pages, Ctrl+Alt+D shows `Zone measure` with the text inside the zone and OCR captures full text

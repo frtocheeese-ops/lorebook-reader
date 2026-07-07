@@ -12,6 +12,11 @@ you've read — so you can keep playing while you listen to the story.
   `Ctrl+Alt+R`) or click the speaker icon next to the book. The text is
   captured with on-screen OCR and read with text-to-speech, so your
   gameplay is never interrupted.
+- **Read NPC dialogues & story journals** — turn on conversation capture
+  (`Ctrl+Alt+C`) to also read personal-story journals and NPC dialogue
+  windows aloud, not just lorebooks. A quick one-time calibration
+  (`Ctrl+Alt+Z`) marks where dialogue text appears so OCR stays reliable —
+  see [Reading NPC dialogues](#reading-npc-dialogues-ocr).
 - **On-screen subtitles** — optional captions in a Guild Wars 2-style
   font with adjustable size, opacity and drag-to-place position. Full
   diacritics for every language.
@@ -63,12 +68,35 @@ install and enable.
 3. Click the book icon in the top-left icon bar to open the
    **Encyclopedia** and browse everything you've read.
 
+### Reading NPC dialogues (OCR)
+
+Personal-story journals and NPC dialogue windows can be read too. Unlike a
+lorebook's solid parchment, they sit over the moving game world, so the module
+needs to know where the dialogue text appears. You tell it once:
+
+1. **Turn on conversation capture** — press `Ctrl+Alt+C`, or tick *Conversation
+   capture mode* in the module settings. (A tip pops up the first time.)
+2. **Calibrate the zone** — open any dialogue, then press `Ctrl+Alt+Z` (or
+   *Settings → Calibrate dialogue zone*). A frame appears on screen.
+3. **Drag the frame over the dialogue text only** — move it by its body, resize
+   it with the corner handles. Cover the narrative text; leave out the
+   "Read on." / "Close" options and the journal icon on the right. Click
+   **Save zone**.
+4. **Read as usual** — with a dialogue open, press `Ctrl+Alt+R` or click the
+   speaker button. The text is saved to the Encyclopedia like any book.
+
+The zone is stored **per screen resolution** — recalibrate (or use *Clear
+calibration*) if you change your resolution or UI size. Without calibration the
+module falls back to automatic detection, which works but is less reliable
+across the game's lighting conditions. Keep GW2 in **Windowed Fullscreen** so
+the screen capture works.
+
 ## Building from source
 
 Requires Visual Studio 2022 with the *.NET desktop development* workload
-and the *.NET Framework 4.7.2 targeting pack*. Open `LorebookReader.csproj`,
-restore NuGet packages, and build. The output `bin\LorebookReader.bhm`
-is the installable module.
+and the *.NET Framework 4.8 targeting pack*. Open `LorebookReader.csproj`,
+restore NuGet packages, and build. The output
+`bin\Debug\net48\LorebookReader.bhm` is the installable module.
 
 ## License
 

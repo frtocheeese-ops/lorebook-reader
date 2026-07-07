@@ -1,10 +1,10 @@
 {
   "name": "Lorebook Reader",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "namespace": "vrae.lorebook_reader",
   "package": "LorebookReader.dll",
   "manifest_version": 1,
-  "description": "Reads open lorebooks aloud using OCR and text-to-speech, so you can keep playing while listening to the story. Press the keybind (default Ctrl+Alt+R) or click the speaker icon next to an open book.",
+  "description": "Reads open lorebooks and NPC story dialogues aloud using on-screen OCR and text-to-speech — with subtitles, translation and a searchable encyclopedia — so you can keep playing while listening to the story. Press Ctrl+Alt+R or click the speaker icon next to an open book.",
   "url": "https://github.com/frtocheeese-ops/lorebook-reader",
   "contributors": [
     {

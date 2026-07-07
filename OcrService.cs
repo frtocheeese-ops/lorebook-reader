@@ -44,10 +44,11 @@ namespace Frtal.LorebookReader {
             }
         }
 
-        /// <summary>OCR krátkého jednořádkového textu (název knihy v hlavičce).</summary>
+        /// <summary>OCR krátkého jednořádkového textu (název knihy v hlavičce,
+        /// NPC jméno na tmavém labelu — pak s invert=true).</summary>
         public static async Task<string> RecognizeLineAsync(
-                Bitmap source, string languageTag) {
-            string text = await RecognizeAsync(source, languageTag)
+                Bitmap source, string languageTag, bool invert = false) {
+            string text = await RecognizeAsync(source, languageTag, invert)
                 .ConfigureAwait(false);
             // sloučit do jednoho řádku, ořezat nesmysly
             string line = (text ?? "").Replace("\r", " ").Replace("\n", " ");

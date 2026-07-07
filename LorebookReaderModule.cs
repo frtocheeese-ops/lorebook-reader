@@ -44,6 +44,8 @@ namespace Frtal.LorebookReader {
         private SettingEntry<bool>       _conversationCapture; // conversation OCR toggle
         private SettingEntry<KeyBinding> _convToggleKeybind;   // keybind pro toggle
         private SettingEntry<KeyBinding> _debugDumpKeybind;    // P1.1: debug capture
+        private SettingEntry<string>     _dialogZone;          // "x,y,w,h,resW,resH" px klienta
+        private SettingEntry<KeyBinding> _calibrateKeybind;    // kalibrace zóny dialogu
 
         // přístup pro LorebookSettingsView
         internal SettingEntry<KeyBinding> ReadKeybindSetting       => _readKeybind;
@@ -65,6 +67,8 @@ namespace Frtal.LorebookReader {
         internal SettingEntry<bool>       ConversationCaptureSetting => _conversationCapture;
         internal SettingEntry<KeyBinding> ConvToggleKeybindSetting   => _convToggleKeybind;
         internal SettingEntry<KeyBinding> DebugDumpKeybindSetting    => _debugDumpKeybind;
+        internal SettingEntry<string>     DialogZoneSetting          => _dialogZone;
+        internal SettingEntry<KeyBinding> CalibrateKeybindSetting    => _calibrateKeybind;
 
         // --- stav ---
         private TtsService _tts;
@@ -81,14 +85,15 @@ namespace Frtal.LorebookReader {
         private int _speakSession;
         private volatile bool _chunkTranslate;
         private string _chunkTranslateTarget = "cs";
-        private Blish_HUD.Controls.Image _speakerButton;
-        private Blish_HUD.Controls.Image _saveButton;
-        private Blish_HUD.Controls.Image _appendButton;
+        private BookActionButton _speakerButton;
+        private BookActionButton _saveButton;
+        private BookActionButton _appendButton;
         private SubtitleOverlay _subtitleLabel;
         private volatile bool _subtitleDirty;
         private string _pendingSubtitle;
         private int _lastSubWidth = -1;
         private int _lastFontSize = -1;
+        private int _subWidthCap = -1;   // strop šířky titulků (~42 znaků)
         private bool _readBusy;
         private bool _detectBusy;
         private double _detectTimerMs;
@@ -101,6 +106,10 @@ namespace Frtal.LorebookReader {
         // conversation detection
         private volatile bool _convVisible;
         private Rectangle _convBox;          // konverzační panel
+
+        // kalibrace zóny dialogu (uživatelsky označená plocha)
+        private DialogZoneCalibrator _calibrator;
+        private bool _calibNudgeShown;
 
         [ImportingConstructor]
         public LorebookReaderModule(
@@ -218,6 +227,19 @@ namespace Frtal.LorebookReader {
                 () => "Saves the current frame, detector results and OCR "
                     + "output to the lorebook_reader\\debug folder. "
                     + "Attach that folder to bug reports.");
+
+            _dialogZone = settings.DefineSetting(
+                "DialogZone", "",
+                () => "Calibrated dialogue zone",
+                () => "Internal store of the calibrated dialogue area "
+                    + "(pixels + resolution stamp).");
+
+            _calibrateKeybind = settings.DefineSetting(
+                "CalibrateKeybind",
+                new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.Z),
+                () => "Calibrate dialogue zone",
+                () => "Opens a draggable frame to mark where dialogue text "
+                    + "appears. Do this once per screen resolution.");
         }
 
         protected override async Task LoadAsync() {
@@ -244,6 +266,8 @@ namespace Frtal.LorebookReader {
             _convToggleKeybind.Value.Activated += OnConvToggleActivated;
             _debugDumpKeybind.Value.Enabled = true;
             _debugDumpKeybind.Value.Activated += OnDebugDumpActivated;
+            _calibrateKeybind.Value.Enabled = true;
+            _calibrateKeybind.Value.Activated += OnCalibrateActivated;
 
             // P0.3: pokud Load() narazil na poškozený katalog, říct to
             // uživateli — tiché selhání dřív umělo zahodit celou sbírku
@@ -267,6 +291,9 @@ namespace Frtal.LorebookReader {
                 Visible  = false
             };
             _lastFontSize = _subtitleFontSize.Value;
+            // Netflix strop šířky spočítat hned (ne až při změně fontu)
+            _subWidthCap = (int)_textRenderer.MeasureWidth(
+                new string('n', 42), _lastFontSize) + 16;
             _subtitleLabel.PositionEdited += (s, a) => {
                 var spriteP = GameService.Graphics.SpriteScreen.Size;
                 if (spriteP.X <= 0 || spriteP.Y <= 0) return;
@@ -330,23 +357,16 @@ namespace Frtal.LorebookReader {
             }
         }
 
-        private Blish_HUD.Controls.Image MakeBookButton(
+        private BookActionButton MakeBookButton(
                 string iconKey, string tooltip, Action onClick) {
-            var btn = new Blish_HUD.Controls.Image(
-                ModuleParameters.ContentsManager.GetTexture(iconKey + ".png")) {
-                Parent  = GameService.Graphics.SpriteScreen,
-                Size    = new Point(36, 36),
-                Visible = false,
-                BasicTooltipText = tooltip
+            // textury načíst jednou — žádné GetTexture při každém hoveru
+            var icon = ModuleParameters.ContentsManager
+                .GetTexture(iconKey + ".png");
+            var hover = ModuleParameters.ContentsManager
+                .GetTexture(iconKey + "_hover.png");
+            return new BookActionButton(icon, hover, tooltip, onClick) {
+                Parent = GameService.Graphics.SpriteScreen
             };
-            btn.MouseEntered += (s, a) =>
-                btn.Texture = ModuleParameters.ContentsManager
-                    .GetTexture(iconKey + "_hover.png");
-            btn.MouseLeft += (s, a) =>
-                btn.Texture = ModuleParameters.ContentsManager
-                    .GetTexture(iconKey + ".png");
-            btn.Click += (s, a) => onClick();
-            return btn;
         }
 
         private void OnReadActivated(object sender, EventArgs e) => StartRead();
@@ -411,16 +431,38 @@ namespace Frtal.LorebookReader {
                     info.AppendLine(convHit != null
                         ? "ConversationDetector: panel " + convHit.Panel
                           + $" text {convHit.TextArea}"
-                          + $" solidity {convHit.Solidity:0.000}"
+                          + $" confidence {convHit.Confidence:0.000}"
                         : "ConversationDetector: no hit");
+                    if (!string.IsNullOrEmpty(
+                            ConversationDetector.LastDiagnostics)) {
+                        info.AppendLine("Detector diagnostics:");
+                        info.AppendLine(ConversationDetector.LastDiagnostics);
+                    }
+
+                    // kalibrovaná zóna: report + (když je) použij ji pro výřez,
+                    // ať dump testuje přesně cestu, kterou jede čtení
+                    var zoneDbg = GetCalibratedZone(screen.Width, screen.Height);
+                    ConversationHit convUse = convHit;
+                    if (zoneDbg != null) {
+                        var zHit = ConversationDetector.MeasureInZone(
+                            screen, zoneDbg.Value);
+                        info.AppendLine($"Calibrated zone: {zoneDbg.Value}");
+                        info.AppendLine(zHit != null
+                            ? $"Zone measure: text {zHit.TextArea} "
+                              + $"conf {zHit.Confidence:0.000}"
+                            : "Zone measure: no bright text");
+                        if (parch == null && zHit != null) convUse = zHit;
+                    } else {
+                        info.AppendLine("Calibrated zone: none");
+                    }
 
                     // stejná priorita jako CaptureBookAsync: pergamen první
-                    bool isConversation = parch == null && convHit != null;
-                    Rectangle? box = parch ?? convHit?.Panel;
+                    bool isConversation = parch == null && convUse != null;
+                    Rectangle? box = parch ?? convUse?.Panel;
 
                     if (box != null) {
                         Rectangle inner = isConversation
-                            ? convHit.TextArea
+                            ? convUse.TextArea
                             : ParchmentDetector.InnerCrop(box.Value);
                         info.AppendLine("Detector used: "
                             + (isConversation ? "conversation" : "parchment"));
@@ -467,7 +509,99 @@ namespace Frtal.LorebookReader {
             string state = _conversationCapture.Value ? "ON" : "OFF";
             ScreenNotification.ShowNotification(
                 $"Conversation capture: {state}");
-            if (!_conversationCapture.Value) _convVisible = false;
+            if (!_conversationCapture.Value) { _convVisible = false; return; }
+            MaybeNudgeCalibration();
+        }
+
+        /// <summary>Při prvním zapnutí konverzace bez kalibrace jemně
+        /// nabídne označení zóny — spolehlivost tím výrazně stoupne.</summary>
+        private void MaybeNudgeCalibration() {
+            if (_calibNudgeShown) return;
+            if (!string.IsNullOrEmpty(_dialogZone.Value)) return;
+            _calibNudgeShown = true;
+            ScreenNotification.ShowNotification(
+                "Tip: press Ctrl+Alt+Z to mark where dialogues appear — "
+                + "detection then gets much more reliable.");
+        }
+
+        // --- kalibrace zóny dialogu ---
+
+        internal void StartCalibration() =>
+            OnCalibrateActivated(null, EventArgs.Empty);
+
+        private void OnCalibrateActivated(object sender, EventArgs e) {
+            if (_calibrator != null) return; // už běží
+            var sp = GameService.Graphics.SpriteScreen.Size;
+            Microsoft.Xna.Framework.Rectangle start;
+            var zone = GetCalibratedZone(
+                _gw2ClientRect.Width, _gw2ClientRect.Height);
+            if (zone != null && _gw2ClientRect.Width > 0
+                             && _gw2ClientRect.Height > 0) {
+                float sx = (float)sp.X / _gw2ClientRect.Width;
+                float sy = (float)sp.Y / _gw2ClientRect.Height;
+                start = new Microsoft.Xna.Framework.Rectangle(
+                    (int)(zone.Value.X * sx), (int)(zone.Value.Y * sy),
+                    (int)(zone.Value.Width * sx), (int)(zone.Value.Height * sy));
+            } else {
+                // rozumný výchozí obdélník v horní části obrazovky
+                // (užší — odpovídá ploše textu vyprávění, ne celému panelu)
+                start = new Microsoft.Xna.Framework.Rectangle(
+                    (int)(sp.X * 0.35f), (int)(sp.Y * 0.06f),
+                    (int)(sp.X * 0.22f), (int)(sp.Y * 0.10f));
+            }
+            _calibrator = new DialogZoneCalibrator(
+                start, OnCalibrationSaved, CloseCalibrator);
+        }
+
+        private void OnCalibrationSaved(
+                Microsoft.Xna.Framework.Rectangle spriteRect) {
+            try {
+                IntPtr hwnd = GameService.GameIntegration
+                    .Gw2Instance.Gw2WindowHandle;
+                int cw, ch;
+                using (Bitmap s = ScreenCapture.Grab(hwnd, out Rectangle _)) {
+                    cw = s.Width; ch = s.Height;
+                }
+                var sp = GameService.Graphics.SpriteScreen.Size;
+                float sx = (float)cw / Math.Max(1, sp.X);
+                float sy = (float)ch / Math.Max(1, sp.Y);
+                int x = Math.Max(0, (int)(spriteRect.X * sx));
+                int y = Math.Max(0, (int)(spriteRect.Y * sy));
+                int w = (int)(spriteRect.Width  * sx);
+                int h = (int)(spriteRect.Height * sy);
+                _dialogZone.Value = $"{x},{y},{w},{h},{cw},{ch}";
+                ScreenNotification.ShowNotification(
+                    $"Dialogue zone saved ({w}×{h} @ {cw}×{ch}).");
+                Logger.Info($"Dialogue zone calibrated: {_dialogZone.Value}");
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Calibration save failed.");
+                ScreenNotification.ShowNotification(
+                    "Calibration save failed: " + ex.Message);
+            }
+            CloseCalibrator();
+        }
+
+        private void CloseCalibrator() {
+            _calibrator?.Dispose();
+            _calibrator = null;
+        }
+
+        /// <summary>Naparsuje uloženou zónu, ale jen když stamp rozlišení
+        /// sedí na aktuální klientskou oblast (jinak neplatná → null → padne
+        /// se na heuristiku).</summary>
+        private Rectangle? GetCalibratedZone(int clientW, int clientH) {
+            var raw = _dialogZone.Value;
+            if (string.IsNullOrEmpty(raw)) return null;
+            var p = raw.Split(',');
+            if (p.Length != 6) return null;
+            if (!int.TryParse(p[0], out int x)  || !int.TryParse(p[1], out int y)
+             || !int.TryParse(p[2], out int w)  || !int.TryParse(p[3], out int h)
+             || !int.TryParse(p[4], out int rw) || !int.TryParse(p[5], out int rh))
+                return null;
+            if (w < 16 || h < 16) return null;
+            if (clientW > 0 && clientH > 0 && (rw != clientW || rh != clientH))
+                return null;
+            return new Rectangle(x, y, w, h);
         }
 
         private void StartRead() {
@@ -531,15 +665,24 @@ namespace Frtal.LorebookReader {
                 if (box != null) {
                     Logger.Info($"Parchment {box} solidity {solidity:0.00}");
                 } else if (_conversationCapture.Value) {
-                    // 2) Zkusit konverzační dialog
-                    var hit = ConversationDetector.FindHit(screen);
+                    // 2) Konverzace: s kalibrací pevná zóna (spolehlivá),
+                    //    jinak heuristika. Manuální čtení věří uživateli —
+                    //    když v zóně není měřitelný text, vezme celou zónu.
+                    var zone = GetCalibratedZone(screen.Width, screen.Height);
+                    var hit = zone != null
+                        ? (ConversationDetector.MeasureInZone(screen, zone.Value)
+                           ?? new ConversationHit {
+                                  Panel = zone.Value, TextArea = zone.Value,
+                                  Confidence = 0 })
+                        : ConversationDetector.FindHit(screen);
                     if (hit != null) {
                         box = hit.Panel;
                         convText = hit.TextArea;
-                        solidity = hit.Solidity;
+                        solidity = hit.Confidence;
                         isConversation = true;
-                        Logger.Info($"Conversation panel {hit.Panel} "
-                            + $"text {hit.TextArea} solidity {hit.Solidity:0.00}");
+                        Logger.Info($"Conversation {(zone != null ? "zone" : "auto")} "
+                            + $"panel {hit.Panel} text {hit.TextArea} "
+                            + $"conf {hit.Confidence:0.00}");
                     }
                 }
 
@@ -713,11 +856,12 @@ namespace Frtal.LorebookReader {
         /// od konverzačního panelu (invertovaný OCR).</summary>
         private string TryReadNpcName(Bitmap screen, Rectangle convBox) {
             try {
-                // NPC label je v pravé části panelu, vertikálně uprostřed
-                int labelW = (int)(convBox.Width * 0.30);
-                int labelH = (int)(convBox.Height * 0.15);
+                // Label sedí v pravé části union-panelu, pod headerem
+                // (geometrie pro panel = union(header, text) z v6.1)
+                int labelW = (int)(convBox.Width * 0.38);
+                int labelH = (int)(convBox.Height * 0.45);
                 int lx = convBox.Right - labelW;
-                int ly = convBox.Y + (int)(convBox.Height * 0.35);
+                int ly = convBox.Y + (int)(convBox.Height * 0.15);
                 // ověřit, že nevypadáváme z obrazovky
                 lx = Math.Max(0, Math.Min(lx, screen.Width - labelW));
                 ly = Math.Max(0, Math.Min(ly, screen.Height - labelH));
@@ -730,7 +874,8 @@ namespace Frtal.LorebookReader {
                            screen.Clone(labelRect, screen.PixelFormat)) {
                     // NPC jméno je bílý text na tmavém pozadí → invertovat
                     string raw = OcrService.RecognizeLineAsync(
-                        labelCrop, _ocrLanguage.Value).GetAwaiter().GetResult();
+                        labelCrop, _ocrLanguage.Value, invert: true)
+                        .GetAwaiter().GetResult();
                     raw = (raw ?? "").Trim();
                     // NPC jméno bývá 2-40 znaků
                     if (raw.Length < 2 || raw.Length > 40) return null;
@@ -836,6 +981,11 @@ namespace Frtal.LorebookReader {
                 if (_subtitleFontSize.Value != _lastFontSize) {
                     _lastFontSize = _subtitleFontSize.Value;
                     _subtitleLabel.FontSize = _lastFontSize;
+                    // Netflix ~42 znaků/řádek: strop šířky boxu podle
+                    // skutečné šířky 42 průměrných znaků ('n') ve fontu.
+                    // Přepočet jen při změně velikosti fontu.
+                    _subWidthCap = (int)_textRenderer.MeasureWidth(
+                        new string('n', 42), _lastFontSize) + 16;
                 }
                 if (_subtitleLabel.EditMode) {
                     _subtitleLabel.Opacity = _subtitleOpacity.Value;
@@ -849,7 +999,9 @@ namespace Frtal.LorebookReader {
                             && !string.IsNullOrEmpty(_subtitleLabel.SubtitleText);
                 if (show) {
                     var sprite = GameService.Graphics.SpriteScreen.Size;
-                    int width = Math.Max(100, (int)(sprite.X * 0.45f));
+                    int width = Math.Max(100, Math.Min(
+                        (int)(sprite.X * 0.45f),
+                        _subWidthCap > 0 ? _subWidthCap : int.MaxValue));
                     if (width != _lastSubWidth) {
                         _subtitleLabel.BoxWidth = width;
                         _lastSubWidth = width;
@@ -883,17 +1035,19 @@ namespace Frtal.LorebookReader {
                     var sprite = GameService.Graphics.SpriteScreen.Size;
                     float scaleX = (float)sprite.X / _gw2ClientRect.Width;
                     float scaleY = (float)sprite.Y / _gw2ClientRect.Height;
-                    // Konverzace: tlačítka dál doprava (za NPC jméno/portrét)
+                    // Konverzace: tlačítka za pravý okraj union-panelu
+                    // (malá frakce + konstanta — velká frakce u širokých
+                    // dialogů odstřelovala tlačítka daleko od textu)
                     int extraOffset = _convVisible
-                        ? (int)(activeBox.Width * scaleX * 0.18)
+                        ? (int)(activeBox.Width * scaleX * 0.06f) + 12
                         : 6;
                     int x = (int)(activeBox.Right * scaleX) + extraOffset;
                     int y = (int)(activeBox.Top * scaleY);
                     int bx = Math.Min(x, sprite.X - _speakerButton.Width);
                     // tři ikony pod sebou: číst / uložit / připojit
                     _speakerButton.Location = new Point(bx, Math.Max(0, y));
-                    _saveButton.Location    = new Point(bx, Math.Max(0, y + 40));
-                    _appendButton.Location  = new Point(bx, Math.Max(0, y + 80));
+                    _saveButton.Location    = new Point(bx, Math.Max(0, y + 44));
+                    _appendButton.Location  = new Point(bx, Math.Max(0, y + 88));
                     _speakerButton.Visible = true;
                     _saveButton.Visible    = true;
                     _appendButton.Visible  = true;
@@ -924,6 +1078,21 @@ namespace Frtal.LorebookReader {
                     // 2) Pokud conversation mode je ON a pergamen nenalezen,
                     //    zkusit konverzační dialog
                     if (_conversationCapture.Value) {
+                        var zone = GetCalibratedZone(screen.Width, screen.Height);
+                        if (zone != null) {
+                            // text-like výplň zóny → dialog otevřený; prázdná
+                            // (tma) i plná (obloha) zóna se odmítne přes conf
+                            var zHit = ConversationDetector.MeasureInZone(
+                                screen, zone.Value);
+                            if (zHit != null && zHit.Confidence >= 0.03
+                                             && zHit.Confidence <= 0.6) {
+                                _convBox = zHit.Panel;   // = zóna → stabilní kotva
+                                _convVisible = true;
+                                return;
+                            }
+                            _convVisible = false;
+                            return;
+                        }
                         Rectangle? conv = ConversationDetector.Find(screen, out _);
                         if (conv != null) {
                             _convBox = conv.Value;
@@ -947,6 +1116,8 @@ namespace Frtal.LorebookReader {
             _stopKeybind.Value.Activated -= OnStopActivated;
             _convToggleKeybind.Value.Activated -= OnConvToggleActivated;
             _debugDumpKeybind.Value.Activated -= OnDebugDumpActivated;
+            _calibrateKeybind.Value.Activated -= OnCalibrateActivated;
+            _calibrator?.Dispose();
             _speakerButton?.Dispose();
             _saveButton?.Dispose();
             _appendButton?.Dispose();

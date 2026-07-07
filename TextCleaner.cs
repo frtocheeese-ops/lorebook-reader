@@ -233,7 +233,8 @@ namespace Frtal.LorebookReader {
         /// nepřerušovat uprostřed fráze. Dlouhé věty (> maxLen)
         /// se dělí na klauze (středník, pomlčka, čárka+spojka).
         ///
-        /// Pro titulky se text zalamuje v SanitizeForDisplay.
+        /// Titulky zalamuje SubtitleOverlay pixel-přesně; šířku boxu
+        /// omezuje modul na ~42 znaků (Netflix standard).
         /// </summary>
         public static System.Collections.Generic.List<string> SplitChunks(
                 string text, int maxLen = 200) {
@@ -256,8 +257,7 @@ namespace Frtal.LorebookReader {
                 }
             }
 
-            // 3) Sloučit velmi krátké fráze (≤ 25 znaků) se sousední
-            const int minLen = 25;
+            // 3) Sloučit velmi krátké fráze se sousední
             var result = new System.Collections.Generic.List<string>();
             string buf = "";
             foreach (string p in phrases) {
@@ -390,35 +390,10 @@ namespace Frtal.LorebookReader {
                         break;
                 }
             }
-            return WrapLines(sb.ToString(), 42);
-        }
-
-        /// <summary>Zalamuje text na řádky po ~maxChars znacích
-        /// (Netflix standard: 42 znaků/řádek).
-        /// Zalamuje na mezerách, nikdy uprostřed slova.</summary>
-        private static string WrapLines(string text, int maxChars = 42) {
-            text = text.Trim();
-            if (text.Length <= maxChars) return text;
-
-            var lines = new System.Text.StringBuilder();
-            string[] words = text.Split(' ');
-            string line = "";
-            foreach (string w in words) {
-                if (line.Length == 0) {
-                    line = w;
-                } else if (line.Length + 1 + w.Length <= maxChars) {
-                    line += " " + w;
-                } else {
-                    if (lines.Length > 0) lines.Append('\n');
-                    lines.Append(line);
-                    line = w;
-                }
-            }
-            if (line.Length > 0) {
-                if (lines.Length > 0) lines.Append('\n');
-                lines.Append(line);
-            }
-            return lines.ToString();
+            // zalamování je věcí SubtitleOverlay (pixel-přesné podle
+            // GDI metrik) — druhý, znakový wrap tady způsoboval
+            // nerovnoměrné řádky při malém/velkém fontu
+            return sb.ToString();
         }
     }
 }
