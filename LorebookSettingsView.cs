@@ -58,6 +58,60 @@ namespace Frtal.LorebookReader {
             speakerCheckbox.CheckedChanged += (s, e) =>
                 _module.ShowSpeakerButtonSetting.Value = e.Checked;
 
+            // --- conversation capture ---
+            var convCheckbox = new Checkbox {
+                Text    = "Conversation capture mode (also detect NPC dialogues)",
+                Checked = _module.ConversationCaptureSetting.Value,
+                Parent  = panel
+            };
+            convCheckbox.CheckedChanged += (s, e) =>
+                _module.ConversationCaptureSetting.Value = e.Checked;
+            // sync: když se setting změní přes keybind, aktualizovat checkbox
+            _module.ConversationCaptureSetting.SettingChanged += (s, e) =>
+                convCheckbox.Checked = e.NewValue;
+
+            new KeybindingAssigner(_module.ConvToggleKeybindSetting.Value) {
+                KeyBindingName = "Toggle conversation capture",
+                Parent         = panel
+            };
+
+            // --- kalibrace zóny dialogu ---
+            var calibStatus = new Label {
+                Text           = _module.DialogZoneSetting.Value.Length > 0
+                                 ? "Dialogue zone: calibrated"
+                                 : "Dialogue zone: not calibrated",
+                AutoSizeWidth  = true,
+                AutoSizeHeight = true,
+                Parent         = panel
+            };
+            new KeybindingAssigner(_module.CalibrateKeybindSetting.Value) {
+                KeyBindingName = "Calibrate dialogue zone",
+                Parent         = panel
+            };
+            var calibButton = new StandardButton {
+                Text   = "Calibrate dialogue zone (drag a frame)",
+                Width  = 360,
+                Parent = panel
+            };
+            calibButton.Click += (s, e) => _module.StartCalibration();
+            var clearCalibButton = new StandardButton {
+                Text   = "Clear calibration (use auto-detect)",
+                Width  = 360,
+                Parent = panel
+            };
+            clearCalibButton.Click += (s, e) =>
+                _module.DialogZoneSetting.Value = "";
+            _module.DialogZoneSetting.SettingChanged += (s, e) =>
+                calibStatus.Text = !string.IsNullOrEmpty(e.NewValue)
+                    ? "Dialogue zone: calibrated"
+                    : "Dialogue zone: not calibrated";
+
+            // P1.1: debug capture pro kalibraci a bug reporty
+            new KeybindingAssigner(_module.DebugDumpKeybindSetting.Value) {
+                KeyBindingName = "Save debug capture",
+                Parent         = panel
+            };
+
             // --- volba TTS enginu ---
             new Label {
                 Text           = "Voice engine",

@@ -95,7 +95,10 @@ namespace Frtal.LorebookReader {
                     this.Size = new Point(_boxWidth, 1);
                     return;
                 }
-                WrapInto(_lines, _rawText, _boxWidth - 16);
+                // pixel-přesné zalamování — jediný wrapper v pipeline
+                // (TextCleaner text nezalamuje, jen sanitizuje znaky)
+                _lines.AddRange(
+                    _textRenderer.WrapText(_rawText, _fontSize, _boxWidth - 16));
                 float lh = _textRenderer.LineHeight(_fontSize);
                 int height = (int)Math.Ceiling(lh * _lines.Count) + 10;
                 this.Size = new Point(_boxWidth, Math.Max(1, height));
@@ -103,26 +106,6 @@ namespace Frtal.LorebookReader {
                 Logger.Warn(ex, "Subtitle layout failed.");
                 _lines.Clear();
                 this.Size = new Point(_boxWidth, 1);
-            }
-        }
-
-        /// <summary>Word-wrap podle skutečné GDI šířky slov.</summary>
-        private void WrapInto(List<string> output, string text, int maxWidth) {
-            foreach (string paragraph in text.Split('\n')) {
-                string[] words = paragraph.Split(' ');
-                string current = "";
-                foreach (string word in words) {
-                    string candidate = current.Length == 0
-                        ? word : current + " " + word;
-                    float width = _textRenderer.MeasureWidth(candidate, _fontSize);
-                    if (width <= maxWidth || current.Length == 0) {
-                        current = candidate;
-                    } else {
-                        output.Add(current);
-                        current = word;
-                    }
-                }
-                if (current.Length > 0) output.Add(current);
             }
         }
 

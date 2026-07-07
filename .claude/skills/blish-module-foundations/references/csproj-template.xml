@@ -1,0 +1,51 @@
+<!-- Verified working shape for Blish HUD modules built locally AND on the SSRD
+     build host. Copied from LorebookReader.csproj (v0.2.2). Rules:
+     - Do NOT remove the ForceRestore target (SSRD host skips dotnet restore
+       for SDK-style projects; without this target the build dies with
+       NETSDK1004 and produces no .bhm).
+     - Do NOT add .slnx solution files to the repo (SSRD host can't use them).
+     - AllowUnsafeBlocks stays on: detectors use unsafe LockBits scans. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ModuleName</AssemblyName>
+    <RootNamespace>Frtal.ModuleName</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BlishHUD" Version="1.2.0"
+                      ExcludeAssets="runtime;contentFiles;analyzers" />
+    <PackageReference Include="System.ComponentModel.Composition" Version="6.0.0" />
+    <!-- WinRT (OCR, speech) on net48: -->
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.22621.3233" />
+    <!-- Reliable audio playback (WinRT playback events are flaky): -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <!-- JavaScriptSerializer (catalog + translation JSON): -->
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="manifest.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="ref\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>ref\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+  </ItemGroup>
+
+  <!-- CRITICAL for SSRD. See ssrd-build-publish skill. -->
+  <Target Name="ForceRestore"
+          BeforeTargets="CollectPackageReferences;ResolvePackageAssets"
+          Condition="!Exists('$(BaseIntermediateOutputPath)project.assets.json') AND '$(ForceRestoreRunning)' != 'true'">
+    <Exec Command="dotnet restore &quot;$(MSBuildProjectFullPath)&quot; -p:ForceRestoreRunning=true" />
+  </Target>
+
+</Project>

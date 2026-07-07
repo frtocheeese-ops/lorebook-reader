@@ -34,6 +34,13 @@ click the speaker icon that appears next to the book. The module captures
 the text with on-screen OCR and reads it with text-to-speech while you
 keep playing.
 
+### 🗨️ Read NPC Dialogues & Story Journals
+Turn on **conversation capture** (`Ctrl+Alt+C`) to also read personal-story
+journals and NPC dialogue windows aloud — not just lorebooks. Because these
+sit over the moving game world, a quick one-time **calibration** (`Ctrl+Alt+Z`)
+marks where the dialogue text appears so OCR stays reliable. See
+[Reading NPC Dialogues](#reading-npc-dialogues-ocr).
+
 ### 💾 Quick-Save & Append
 Three clickable icons appear next to every detected lorebook:
 - **🔊 Speaker** — read aloud and save to encyclopedia
@@ -119,6 +126,29 @@ If unavailable, the module falls back to the original text.
 3. Or press **Ctrl+Alt+R** (rebindable) to read the currently open book.
 4. Press **Ctrl+Alt+S** (rebindable) to stop reading at any time.
 
+### Reading NPC Dialogues (OCR)
+
+Personal-story journals and NPC dialogue windows can be read too. Unlike a
+lorebook's solid parchment, they sit over the moving game world, so the module
+needs to know where the dialogue text appears. You tell it once:
+
+1. **Turn on conversation capture** — press **Ctrl+Alt+C**, or tick
+   *Conversation capture mode* in the module settings. (A tip pops up the first
+   time.)
+2. **Calibrate the zone** — open any dialogue, then press **Ctrl+Alt+Z** (or
+   *Settings → Calibrate dialogue zone*). A frame appears on screen.
+3. **Drag the frame over the dialogue text only** — move it by its body, resize
+   it with the corner handles. Cover the narrative text; leave out the
+   "Read on." / "Close" options and the journal icon on the right. Click
+   **Save zone**.
+4. **Read as usual** — with a dialogue open, press **Ctrl+Alt+R** or click the
+   speaker button. The text is saved to the Encyclopedia like any book.
+
+The zone is stored **per screen resolution** — recalibrate (or use *Clear
+calibration*) if you change your resolution or UI size. Without calibration the
+module falls back to automatic detection, which works but is less reliable
+across the game's lighting conditions.
+
 ### Using the Encyclopedia
 1. Click the **book icon** in the top-left Blish HUD icon bar.
 2. Browse, search, or filter your saved lorebooks.
@@ -137,13 +167,18 @@ Reader → Settings (gear icon).
 ### Keybinds
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Read lorebook | `Ctrl+Alt+R` | Captures and reads the open lorebook |
+| Read lorebook | `Ctrl+Alt+R` | Captures and reads the open lorebook or dialogue |
 | Stop reading | `Ctrl+Alt+S` | Stops current TTS playback |
+| Toggle conversation capture | `Ctrl+Alt+C` | Turn NPC-dialogue detection on/off |
+| Calibrate dialogue zone | `Ctrl+Alt+Z` | Mark where dialogue text appears (once per resolution) |
 
 ### Detection
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Show speaker icon on open books | On | Display clickable icons next to detected lorebooks |
+| Conversation capture mode | Off | Also detect NPC dialogue / story-journal windows |
+| Calibrate dialogue zone | — | Draw a frame over the dialogue text for reliable OCR |
+| Clear calibration | — | Forget the saved zone and use automatic detection |
 
 ### Voice
 | Setting | Default | Description |
@@ -206,6 +241,10 @@ As the module checks for a specific pattern and brightness marks,
 it may occur that the three buttons appear on some surfaces similiar to the parchment texture.
 However, since the scan is performed in a matter of seconds it shouldn't be very noticable.
 
+For NPC dialogues, calibrating the dialogue zone (Ctrl+Alt+Z) avoids this
+entirely — the buttons then anchor to your marked area instead of relying on
+automatic detection.
+
 ## Requirements
 
 - [Blish HUD](https://blishhud.com) 1.2 or newer
@@ -220,8 +259,10 @@ However, since the scan is performed in a matter of seconds it shouldn't be very
 The module captures a screenshot of the GW2 client area, detects the
 lorebook parchment using luminance + chromaticity analysis, crops the
 text region, runs Windows OCR on it, cleans up the result, and feeds it
-to the selected TTS engine. Everything happens in the background — your
-gameplay is never interrupted.
+to the selected TTS engine. NPC dialogues are detected the same way, or —
+when you calibrate a dialogue zone — read from that fixed screen area for
+reliability. Everything happens in the background — your gameplay is never
+interrupted.
 
 ## Building from Source
 
