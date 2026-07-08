@@ -10,7 +10,7 @@ you've read — so you can keep playing while you listen to the story.
 <img width="505" height="640" alt="image" src="https://github.com/user-attachments/assets/48e3e5bf-afb4-4df6-8164-3a8dd4570be6" />
 
 
-Click **🔊** to read aloud + save, **💾** to save only, or **📎** to
+Click **🔊** to read aloud + save, **➕** to save only, or **⬇️** to
 append this page to the last saved book.
 
 ### Subtitles while playing
@@ -44,9 +44,9 @@ marks where the dialogue text appears so OCR stays reliable. See
 ### 💾 Quick-Save & Append
 Three clickable icons appear next to every detected lorebook:
 - **🔊 Speaker** — read aloud and save to encyclopedia
-- **💾 Save** — save to encyclopedia without reading (useful when you
+- **➕ Save** — save to encyclopedia without reading (useful when you
   want to read it yourself but keep it for later)
-- **📎 Append** — append the current page to the last saved book (for
+- **⬇️ Append** — append the current page to the last saved book (for
   multi-page lorebooks that spread across several pages)
 
 ### 💬 Subtitles
@@ -121,8 +121,8 @@ If unavailable, the module falls back to the original text.
 1. Open any lorebook in-game (click on it in the world).
 2. Three small icons appear to the right of the book:
    - Click **🔊** to read aloud + save
-   - Click **💾** to save only
-   - Click **📎** to append this page to the last saved book
+   - Click **➕** to save only
+   - Click **⬇️** to append this page to the last saved book
 3. Or press **Ctrl+Alt+R** (rebindable) to read the currently open book.
 4. Press **Ctrl+Alt+S** (rebindable) to stop reading at any time.
 
