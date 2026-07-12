@@ -46,6 +46,8 @@ namespace Frtal.LorebookReader {
         private SettingEntry<KeyBinding> _debugDumpKeybind;    // P1.1: debug capture
         private SettingEntry<string>     _dialogZone;          // "x,y,w,h,resW,resH" px klienta
         private SettingEntry<KeyBinding> _calibrateKeybind;    // kalibrace zóny dialogu
+        private SettingEntry<string>     _bookZone;            // OCR pole knížky (px + stamp)
+        private SettingEntry<KeyBinding> _bookCalibrateKeybind;
 
         // přístup pro LorebookSettingsView
         internal SettingEntry<KeyBinding> ReadKeybindSetting       => _readKeybind;
@@ -69,6 +71,8 @@ namespace Frtal.LorebookReader {
         internal SettingEntry<KeyBinding> DebugDumpKeybindSetting    => _debugDumpKeybind;
         internal SettingEntry<string>     DialogZoneSetting          => _dialogZone;
         internal SettingEntry<KeyBinding> CalibrateKeybindSetting    => _calibrateKeybind;
+        internal SettingEntry<string>     BookZoneSetting            => _bookZone;
+        internal SettingEntry<KeyBinding> BookCalibrateKeybindSetting => _bookCalibrateKeybind;
 
         // --- stav ---
         private TtsService _tts;
@@ -240,6 +244,18 @@ namespace Frtal.LorebookReader {
                 () => "Calibrate dialogue zone",
                 () => "Opens a draggable frame to mark where dialogue text "
                     + "appears. Do this once per screen resolution.");
+
+            _bookZone = settings.DefineSetting(
+                "BookZone", "",
+                () => "Lorebook OCR area (calibrated)",
+                () => "Internal store of the calibrated lorebook OCR area.");
+
+            _bookCalibrateKeybind = settings.DefineSetting(
+                "BookCalibrateKeybind",
+                new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.B),
+                () => "Calibrate lorebook OCR area",
+                () => "Open a lorebook, then press this to drag a frame over the "
+                    + "book text. Fixes text getting cut off. Once per resolution.");
         }
 
         protected override async Task LoadAsync() {
@@ -268,6 +284,8 @@ namespace Frtal.LorebookReader {
             _debugDumpKeybind.Value.Activated += OnDebugDumpActivated;
             _calibrateKeybind.Value.Enabled = true;
             _calibrateKeybind.Value.Activated += OnCalibrateActivated;
+            _bookCalibrateKeybind.Value.Enabled = true;
+            _bookCalibrateKeybind.Value.Activated += OnBookCalibrateActivated;
 
             // P0.3: pokud Load() narazil na poškozený katalog, říct to
             // uživateli — tiché selhání dřív umělo zahodit celou sbírku
@@ -461,9 +479,16 @@ namespace Frtal.LorebookReader {
                     Rectangle? box = parch ?? convUse?.Panel;
 
                     if (box != null) {
+                        var bookCropDbg = parch != null
+                            ? GetCalibratedBookCrop(parch.Value) : null;
                         Rectangle inner = isConversation
                             ? convUse.TextArea
-                            : ParchmentDetector.InnerCrop(box.Value);
+                            : (bookCropDbg ?? ParchmentDetector.InnerCrop(box.Value));
+                        inner = Rectangle.Intersect(inner,
+                            new Rectangle(0, 0, screen.Width, screen.Height));
+                        if (!isConversation)
+                            info.AppendLine("Book crop: " + (bookCropDbg != null
+                                ? "calibrated size (auto-positioned)" : "auto InnerCrop"));
                         info.AppendLine("Detector used: "
                             + (isConversation ? "conversation" : "parchment"));
                         info.AppendLine($"Text crop: {inner}");
@@ -604,6 +629,93 @@ namespace Frtal.LorebookReader {
             return new Rectangle(x, y, w, h);
         }
 
+        // --- kalibrace OCR pole knížky: ukládá JEN TVAR relativně k
+        //     detekovanému boxu; pozice se pak vždy bere z auto-detekce ---
+
+        private Rectangle _bookCalibBox; // detekovaná kniha v okamžiku kalibrace
+
+        internal void StartBookCalibration() =>
+            OnBookCalibrateActivated(null, EventArgs.Empty);
+
+        private void OnBookCalibrateActivated(object sender, EventArgs e) {
+            if (_calibrator != null) return;
+            if (!_bookVisible || _gw2ClientRect.Width <= 0) {
+                ScreenNotification.ShowNotification(
+                    "Open a lorebook first (wait for the buttons), then calibrate.");
+                return;
+            }
+            _bookCalibBox = _bookBox; // pozici neukládáme, jen tvar vůči ní
+            var sp = GameService.Graphics.SpriteScreen.Size;
+            float sx = (float)sp.X / _gw2ClientRect.Width;
+            float sy = (float)sp.Y / _gw2ClientRect.Height;
+            // seed = aktuální kalibrovaný výřez, jinak výchozí InnerCrop
+            Rectangle seed = GetCalibratedBookCrop(_bookBox)
+                             ?? ParchmentDetector.InnerCrop(_bookBox);
+            var start = new Microsoft.Xna.Framework.Rectangle(
+                (int)(seed.X * sx), (int)(seed.Y * sy),
+                (int)(seed.Width * sx), (int)(seed.Height * sy));
+            _calibrator = new DialogZoneCalibrator(
+                start, OnBookZoneSaved, CloseCalibrator);
+        }
+
+        private void OnBookZoneSaved(
+                Microsoft.Xna.Framework.Rectangle spriteRect) {
+            try {
+                var b = _bookCalibBox;
+                if (b.Width <= 0 || b.Height <= 0) {
+                    ScreenNotification.ShowNotification(
+                        "Calibration lost the book — open it and try again.");
+                    CloseCalibrator();
+                    return;
+                }
+                IntPtr hwnd = GameService.GameIntegration
+                    .Gw2Instance.Gw2WindowHandle;
+                int cw, ch;
+                using (Bitmap s = ScreenCapture.Grab(hwnd, out Rectangle _)) {
+                    cw = s.Width; ch = s.Height;
+                }
+                var sp = GameService.Graphics.SpriteScreen.Size;
+                float sx = (float)cw / Math.Max(1, sp.X);
+                float sy = (float)ch / Math.Max(1, sp.Y);
+                double fx = spriteRect.X * sx, fy = spriteRect.Y * sy;
+                double fw = spriteRect.Width * sx, fh = spriteRect.Height * sy;
+                // tvar RELATIVNĚ k boxu, v 1/10000 (základní body) → pozice
+                // jde vždy z auto-detekce a funguje to napříč rozlišeními
+                int xBp = (int)Math.Round((fx - b.X) * 10000.0 / b.Width);
+                int yBp = (int)Math.Round((fy - b.Y) * 10000.0 / b.Height);
+                int wBp = (int)Math.Round(fw * 10000.0 / b.Width);
+                int hBp = (int)Math.Round(fh * 10000.0 / b.Height);
+                _bookZone.Value = $"{xBp},{yBp},{wBp},{hBp}";
+                ScreenNotification.ShowNotification(
+                    "Lorebook OCR area saved (position stays auto-detected).");
+                Logger.Info($"Lorebook OCR area (rel bp): {_bookZone.Value}");
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Book calibration save failed.");
+                ScreenNotification.ShowNotification(
+                    "Book calibration save failed: " + ex.Message);
+            }
+            CloseCalibrator();
+        }
+
+        /// <summary>Výřez OCR pole = uložený tvar (relativně k boxu) aplikovaný
+        /// na PRÁVĚ detekovaný box. Pozice tedy jde z detekce, jen velikost a
+        /// odsazení je uživatelské. Null = nekalibrováno.</summary>
+        private Rectangle? GetCalibratedBookCrop(Rectangle box) {
+            var raw = _bookZone.Value;
+            if (string.IsNullOrEmpty(raw)) return null;
+            var p = raw.Split(',');
+            if (p.Length != 4) return null;
+            if (!int.TryParse(p[0], out int xBp) || !int.TryParse(p[1], out int yBp)
+             || !int.TryParse(p[2], out int wBp) || !int.TryParse(p[3], out int hBp))
+                return null;
+            if (wBp < 100 || hBp < 100) return null; // < 1 % boxu = nesmysl
+            int x = box.X + (int)Math.Round(xBp / 10000.0 * box.Width);
+            int y = box.Y + (int)Math.Round(yBp / 10000.0 * box.Height);
+            int w = (int)Math.Round(wBp / 10000.0 * box.Width);
+            int h = (int)Math.Round(hBp / 10000.0 * box.Height);
+            return new Rectangle(x, y, w, h);
+        }
+
         private void StartRead() {
             if (_readBusy) return;
             _readBusy = true;
@@ -659,6 +771,7 @@ namespace Frtal.LorebookReader {
 
                 // 1) Zkusit pergamenový lorebook (priorita)
                 Rectangle? box = ParchmentDetector.Find(screen, out double solidity);
+                bool parchmentDetected = box != null;
                 bool isConversation = false;
                 Rectangle? convText = null; // v6: změřená textová oblast
 
@@ -696,9 +809,13 @@ namespace Frtal.LorebookReader {
 
                 // Oříznout podle typu detekce (v6: konverzace používá
                 // změřenou TextArea; frakční TextCrop je jen fallback)
+                Rectangle? bookCrop = (parchmentDetected && !isConversation)
+                    ? GetCalibratedBookCrop(box.Value) : null;
                 Rectangle inner = isConversation
                     ? (convText ?? ConversationDetector.TextCrop(box.Value))
-                    : ParchmentDetector.InnerCrop(box.Value);
+                    : (bookCrop ?? ParchmentDetector.InnerCrop(box.Value));
+                inner = Rectangle.Intersect(inner,
+                    new Rectangle(0, 0, screen.Width, screen.Height));
 
                 using (Bitmap crop = screen.Clone(inner, screen.PixelFormat)) {
                     // Konverzace = světlý text na tmavém → invertovat pro OCR
@@ -970,10 +1087,7 @@ namespace Frtal.LorebookReader {
             // katalog: obnovit otevřené okno encyklopedie po novém záznamu
             if (_catalogDirty && _historyWindow != null && _historyWindow.Visible) {
                 _catalogDirty = false;
-                if (_encyclopediaView != null) {
-                    _encyclopediaView.RebuildExpansionFilter();
-                    _encyclopediaView.RefreshList();
-                }
+                _encyclopediaView?.RefreshFromCatalog();
             }
 
             // titulky: aplikace textu/pozice (jen v Update threadu)
@@ -1117,6 +1231,7 @@ namespace Frtal.LorebookReader {
             _convToggleKeybind.Value.Activated -= OnConvToggleActivated;
             _debugDumpKeybind.Value.Activated -= OnDebugDumpActivated;
             _calibrateKeybind.Value.Activated -= OnCalibrateActivated;
+            _bookCalibrateKeybind.Value.Activated -= OnBookCalibrateActivated;
             _calibrator?.Dispose();
             _speakerButton?.Dispose();
             _saveButton?.Dispose();

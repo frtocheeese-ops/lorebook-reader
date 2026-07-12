@@ -7,3 +7,7 @@ pkg/
 *.slnx
 packages/
 Properties/launchSettings.json
+
+# Assistant / dev tooling — not needed by users or the SSRD build
+.claude/
+CLAUDE.md

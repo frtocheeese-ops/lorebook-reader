@@ -171,6 +171,20 @@ namespace Frtal.LorebookReader {
             foreach (var entry in results) AddListRow(entry);
         }
 
+        /// <summary>Obnoví seznam I otevřený náhled podle katalogu (po append
+        /// další stránky, importu apod.). V editačním režimu detail nechá být,
+        /// ať nepřepíše rozeditovaný text uživatele.</summary>
+        public void RefreshFromCatalog() {
+            RebuildExpansionFilter();
+            RefreshList();
+            if (_mode == DetailMode.Edit || _selected == null) return;
+            LorebookEntry fresh = null;
+            foreach (var e in _catalog.All)
+                if (e.Id == _selected.Id) { fresh = e; break; }
+            if (fresh != null) { _selected = fresh; ShowPreview(fresh); }
+            else { _selected = null; ShowEmpty(); }
+        }
+
         private void AddListRow(LorebookEntry entry) {
             var row = new Panel {
                 Parent = _listPanel, Width = _listPanel.Width - 20, Height = 46,

@@ -106,6 +106,32 @@ namespace Frtal.LorebookReader {
                     ? "Dialogue zone: calibrated"
                     : "Dialogue zone: not calibrated";
 
+            // --- kalibrace OCR pole knížek (vizuální, jako u dialogů) ---
+            var bookCalibStatus = new Label {
+                Text           = _module.BookZoneSetting.Value.Length > 0
+                                 ? "Lorebook OCR area: calibrated"
+                                 : "Lorebook OCR area: auto (default)",
+                AutoSizeWidth  = true, AutoSizeHeight = true, Parent = panel
+            };
+            new KeybindingAssigner(_module.BookCalibrateKeybindSetting.Value) {
+                KeyBindingName = "Calibrate lorebook OCR area",
+                Parent         = panel
+            };
+            var bookCalibButton = new StandardButton {
+                Text   = "Calibrate lorebook OCR area (open a book, drag a frame)",
+                Width  = 360, Parent = panel
+            };
+            bookCalibButton.Click += (s, e) => _module.StartBookCalibration();
+            var bookClearButton = new StandardButton {
+                Text   = "Clear lorebook OCR area (use auto-detect)",
+                Width  = 360, Parent = panel
+            };
+            bookClearButton.Click += (s, e) => _module.BookZoneSetting.Value = "";
+            _module.BookZoneSetting.SettingChanged += (s, e) =>
+                bookCalibStatus.Text = !string.IsNullOrEmpty(e.NewValue)
+                    ? "Lorebook OCR area: calibrated"
+                    : "Lorebook OCR area: auto (default)";
+
             // P1.1: debug capture pro kalibraci a bug reporty
             new KeybindingAssigner(_module.DebugDumpKeybindSetting.Value) {
                 KeyBindingName = "Save debug capture",

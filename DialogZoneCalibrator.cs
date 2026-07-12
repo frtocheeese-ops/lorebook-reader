@@ -57,8 +57,8 @@ namespace Frtal.LorebookReader {
 
             _hint = new Label {
                 Parent         = screen,
-                Text           = "Drag the frame over the dialogue TEXT area "
-                                 + "(corners = resize). Exclude 'Read on.'. Then Save.",
+                Text           = "Drag the frame over the TEXT to capture "
+                                 + "(corners = resize). Then Save.",
                 AutoSizeWidth  = true,
                 AutoSizeHeight = true,
                 ZIndex         = int.MaxValue - 9

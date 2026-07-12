@@ -110,13 +110,22 @@ namespace Frtal.LorebookReader {
             return best;
         }
 
-        /// <summary>Vnitřní výřez pergamenu (ořízne ozdobný rámeček).</summary>
-        public static Rectangle InnerCrop(Rectangle box) {
-            int dx = (int)(box.Width * 0.03);
-            int dyT = (int)(box.Height * 0.04);
-            int dyB = (int)(box.Height * 0.02);
-            return new Rectangle(box.X + dx, box.Y + dyT,
-                                 box.Width - 2 * dx, box.Height - dyT - dyB);
+        /// <summary>Vnitřní výřez pergamenu s výchozími okraji
+        /// (3 % strany, 4 % nahoře, 2 % dole — ořízne ozdobný rámeček).</summary>
+        public static Rectangle InnerCrop(Rectangle box) =>
+            InnerCrop(box, 4.0, 2.0, 3.0);
+
+        /// <summary>Vnitřní výřez pergamenu s uživatelsky nastavitelnými okraji
+        /// (v % rozměru boxu). Kladné = ořez dovnitř (schová rámeček), ZÁPORNÉ =
+        /// přesah ven — když detekce spodek/okraj knihy podměří a text se jinak
+        /// uřízne. Volající musí výsledek oříznout na rozměr snímku.</summary>
+        public static Rectangle InnerCrop(Rectangle box,
+                double topPct, double bottomPct, double sidePct) {
+            int dxs = (int)(box.Width  * sidePct   / 100.0);
+            int dyT = (int)(box.Height * topPct    / 100.0);
+            int dyB = (int)(box.Height * bottomPct / 100.0);
+            return new Rectangle(box.X + dxs, box.Y + dyT,
+                                 box.Width - 2 * dxs, box.Height - dyT - dyB);
         }
     }
 }

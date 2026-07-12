@@ -3,6 +3,19 @@
 All notable changes to Lorebook Reader are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## 0.4.1 — 2026-07-12
+
+### Fixed
+- Lorebook text could be cut off at certain resolution / UI-size combinations.
+  You can now calibrate the lorebook OCR area visually: open a book (wait for
+  the buttons to appear), press `Ctrl+Alt+B` (or *Settings → Calibrate lorebook
+  OCR area*), drag the frame over the book text, and Save. Only the size/shape
+  is stored; the book's position is still detected automatically on every read.
+  Falls back to automatic detection when not set.
+- Appending a second page to an already-saved book did not update the open
+  Encyclopedia window until it was closed and reopened. The preview now
+  refreshes immediately.
+
 ## 0.4.0 — 2026-07-07
 
 ### Added
