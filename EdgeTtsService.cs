@@ -71,7 +71,8 @@ namespace Frtal.LorebookReader {
         /// <summary>Přečte text; onChunk dostává právě čtenou dávku
         /// (null po skončení). Při problému se sítí vyhodí výjimku.</summary>
         public async Task SpeakAsync(string text, string voice, double rate,
-                                     Action<string> onChunk = null) {
+                                     Action<string> onChunk = null,
+                                     Action<int> onWord = null) {
             Stop();
             var cts = new CancellationTokenSource();
             _cts = cts;
@@ -82,19 +83,19 @@ namespace Frtal.LorebookReader {
             string prosodyRate = RateToProsody(rate);
 
             try {
-                Task<byte[]> nextTask = SynthesizeChunkAsync(
+                var nextTask = SynthesizeChunkAsync(
                     chunks[0], voice, prosodyRate, ct);
                 for (int i = 0; i < chunks.Count; i++) {
-                    byte[] mp3 = await nextTask.ConfigureAwait(false);
+                    var (mp3, words) = await nextTask.ConfigureAwait(false);
                     if (ct.IsCancellationRequested) return;
 
                     nextTask = (i + 1 < chunks.Count)
                         ? SynthesizeChunkAsync(chunks[i + 1], voice,
                                                prosodyRate, ct)
-                        : Task.FromResult<byte[]>(null);
+                        : Task.FromResult<(byte[], List<TimeSpan>)>((null, null));
 
                     onChunk?.Invoke(chunks[i]);
-                    await PlayMp3Async(mp3, ct).ConfigureAwait(false);
+                    await PlayMp3Async(mp3, words, onWord, ct).ConfigureAwait(false);
                     if (ct.IsCancellationRequested) return;
                 }
             } finally {
@@ -114,7 +115,8 @@ namespace Frtal.LorebookReader {
 
         // ------------------------ syntéza jedné dávky ------------------------
 
-        private static async Task<byte[]> SynthesizeChunkAsync(
+        private static async Task<(byte[] mp3, List<TimeSpan> words)>
+                SynthesizeChunkAsync(
                 string text, string voice, string prosodyRate,
                 CancellationToken outerCt) {
 
@@ -158,7 +160,7 @@ namespace Frtal.LorebookReader {
                     "Path:speech.config\r\n\r\n" +
                     "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":" +
                     "{\"sentenceBoundaryEnabled\":\"false\"," +
-                    "\"wordBoundaryEnabled\":\"false\"}," +
+                    "\"wordBoundaryEnabled\":\"true\"}," +
                     "\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}\r\n";
                 await ws.SendTextAsync(config, ct).ConfigureAwait(false);
 
@@ -176,6 +178,7 @@ namespace Frtal.LorebookReader {
                 await ws.SendTextAsync(ssmlMsg, ct).ConfigureAwait(false);
 
                 var audio = new MemoryStream();
+                var words = new List<TimeSpan>();
                 while (true) {
                     var (type, data) = await ws.ReceiveAsync(ct)
                         .ConfigureAwait(false);
@@ -186,6 +189,14 @@ namespace Frtal.LorebookReader {
                         string msg = Encoding.UTF8.GetString(data);
                         if (msg.Contains("Path:turn.end"))
                             break;
+                        if (msg.Contains("Path:audio.metadata")) {
+                            // WordBoundary: "Offset" ve 100ns tikách od začátku
+                            var mm = System.Text.RegularExpressions.Regex.Match(
+                                msg, "\"Offset\"\\s*:\\s*(\\d+)");
+                            if (mm.Success
+                                && long.TryParse(mm.Groups[1].Value, out long off))
+                                words.Add(TimeSpan.FromTicks(off));
+                        }
                     } else {
                         // [2 B délka hlavičky big-endian][hlavička][mp3 data]
                         if (data.Length < 2) continue;
@@ -198,13 +209,14 @@ namespace Frtal.LorebookReader {
 
                 if (audio.Length == 0)
                     throw new IOException("Edge TTS returned no audio.");
-                return audio.ToArray();
+                return (audio.ToArray(), words);
             }
         }
 
         // --------------------------- přehrávání -----------------------------
 
-        private async Task PlayMp3Async(byte[] mp3, CancellationToken ct) {
+        private async Task PlayMp3Async(byte[] mp3, List<TimeSpan> words,
+                                        Action<int> onWord, CancellationToken ct) {
             if (mp3 == null || mp3.Length == 0) return;
             using (var ms = new MemoryStream(mp3))
             using (var reader = new Mp3FileReader(ms))
@@ -215,11 +227,22 @@ namespace Frtal.LorebookReader {
                 output.PlaybackStopped += (s, e) => done.TrySetResult(true);
                 output.Init(reader);
                 output.Play();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                int wi = 0;
                 using (ct.Register(() => {
                            try { output.Stop(); } catch { /* ignore */ }
                            done.TrySetResult(true);
                        })) {
-                    await done.Task.ConfigureAwait(false);
+                    while (!done.Task.IsCompleted) {
+                        if (words != null && onWord != null) {
+                            while (wi < words.Count && sw.Elapsed >= words[wi]) {
+                                try { onWord(wi); } catch { /* ignore */ }
+                                wi++;
+                            }
+                        }
+                        await Task.WhenAny(done.Task, Task.Delay(25))
+                                  .ConfigureAwait(false);
+                    }
                 }
                 _currentOut = null;
             }

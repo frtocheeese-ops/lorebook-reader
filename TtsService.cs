@@ -35,29 +35,32 @@ namespace Frtal.LorebookReader {
         /// <returns>null = OK; jinak varovná zpráva pro uživatele</returns>
         public async Task<string> SpeakAsync(string text, string voiceName,
                                              double rate, string languageTag,
-                                             Action<string> onChunk = null) {
+                                             Action<string> onChunk = null,
+                                             Action<int> onWord = null) {
             Stop();
             var cts = new CancellationTokenSource();
             _cts = cts;
             CancellationToken ct = cts.Token;
             string warning = SelectVoice(voiceName, languageTag);
             _synth.Options.SpeakingRate = Math.Max(0.5, Math.Min(3.0, rate));
+            // časy slov pro přesný sync titulků (fáze 3)
+            _synth.Options.IncludeWordBoundaryMetadata = true;
 
             List<string> chunks = TextCleaner.SplitChunks(text);
             if (chunks.Count == 0) return warning;
 
             try {
-                Task<byte[]> nextTask = SynthesizeChunkAsync(chunks[0]);
+                var nextTask = SynthesizeChunkAsync(chunks[0]);
                 for (int i = 0; i < chunks.Count; i++) {
-                    byte[] wav = await nextTask.ConfigureAwait(false);
+                    var (wav, words) = await nextTask.ConfigureAwait(false);
                     if (ct.IsCancellationRequested) return warning;
 
                     nextTask = (i + 1 < chunks.Count)
                         ? SynthesizeChunkAsync(chunks[i + 1])
-                        : Task.FromResult<byte[]>(null);
+                        : Task.FromResult<(byte[], List<TimeSpan>)>((null, null));
 
                     onChunk?.Invoke(chunks[i]);
-                    await PlayWavAsync(wav, ct).ConfigureAwait(false);
+                    await PlayWavAsync(wav, words, onWord, ct).ConfigureAwait(false);
                     if (ct.IsCancellationRequested) return warning;
                 }
             } finally {
@@ -104,17 +107,25 @@ namespace Frtal.LorebookReader {
             return warning;
         }
 
-        private async Task<byte[]> SynthesizeChunkAsync(string chunk) {
+        private async Task<(byte[] wav, List<TimeSpan> words)>
+                SynthesizeChunkAsync(string chunk) {
             using (SpeechSynthesisStream stream =
                        await _synth.SynthesizeTextToStreamAsync(chunk)) {
+                var words = new List<TimeSpan>();
+                try {
+                    foreach (var m in stream.Markers) words.Add(m.Time);
+                } catch { /* markery nemusí být k dispozici */ }
                 var ms = new MemoryStream();
                 await stream.AsStreamForRead().CopyToAsync(ms)
                             .ConfigureAwait(false);
-                return ms.ToArray();
+                return (ms.ToArray(), words);
             }
         }
 
-        private async Task PlayWavAsync(byte[] wav, CancellationToken ct) {
+        // Přehraje WAV a za běhu firuje onWord(index) podle časů slov —
+        // titulky se tak přepínají přesně na čteném slově.
+        private async Task PlayWavAsync(byte[] wav, List<TimeSpan> words,
+                                        Action<int> onWord, CancellationToken ct) {
             if (wav == null || wav.Length == 0) return;
             using (var ms = new MemoryStream(wav))
             using (var reader = new WaveFileReader(ms))
@@ -125,11 +136,22 @@ namespace Frtal.LorebookReader {
                 output.PlaybackStopped += (s, e) => done.TrySetResult(true);
                 output.Init(reader);
                 output.Play();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                int wi = 0;
                 using (ct.Register(() => {
                            try { output.Stop(); } catch { /* ignore */ }
                            done.TrySetResult(true);
                        })) {
-                    await done.Task.ConfigureAwait(false);
+                    while (!done.Task.IsCompleted) {
+                        if (words != null && onWord != null) {
+                            while (wi < words.Count && sw.Elapsed >= words[wi]) {
+                                try { onWord(wi); } catch { /* ignore */ }
+                                wi++;
+                            }
+                        }
+                        await Task.WhenAny(done.Task, Task.Delay(25))
+                                  .ConfigureAwait(false);
+                    }
                 }
                 _currentOut = null;
             }

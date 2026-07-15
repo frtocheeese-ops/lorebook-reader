@@ -95,6 +95,16 @@ namespace Frtal.LorebookReader {
         private SubtitleOverlay _subtitleLabel;
         private volatile bool _subtitleDirty;
         private string _pendingSubtitle;
+        // titulková cue: celý úsek (orig/překlad) → krátká cue posouvaná v čase
+        private volatile string _cueSource;
+        private volatile bool _cueSourceDirty;
+        private System.Collections.Generic.List<string> _cues;
+        private int _cueIndex;
+        private double _cueElapsedMs;
+        private int[] _cueWordStart;           // index prvního slova každého cue
+        private volatile int _currentWordIndex; // právě čtené slovo (z TTS)
+        private volatile bool _haveWordEvents;
+        private volatile bool _wordSyncValid = true;
         private int _lastSubWidth = -1;
         private int _lastFontSize = -1;
         private int _subWidthCap = -1;   // strop šířky titulků (~42 znaků)
@@ -506,7 +516,7 @@ namespace Frtal.LorebookReader {
                                 raw ?? "");
                             System.IO.File.WriteAllText(
                                 System.IO.Path.Combine(dir, "ocr_clean.txt"),
-                                TextCleaner.CleanForTts(raw ?? ""));
+                                TextCleaner.CleanForEncyclopedia(raw ?? ""));
                         }
                     } else {
                         info.AppendLine("No panel detected — frame.png "
@@ -737,6 +747,9 @@ namespace Frtal.LorebookReader {
         }
 
         private void OnTtsChunk(string chunk) {
+            // word-sync platí, jen když titulek = mluvený text (ne subtitles-only
+            // překlad, kde hlas čte originál a titulky jsou přeložené)
+            if (chunk != null) _wordSyncValid = !_chunkTranslate;
             if (chunk != null && _chunkTranslate) {
                 int session = _speakSession;
                 string src = chunk;
@@ -748,16 +761,77 @@ namespace Frtal.LorebookReader {
                             src, target);
                     } catch { /* nech originál */ }
                     if (session == _speakSession) {
-                        _pendingSubtitle =
-                            TextCleaner.SanitizeForDisplay(shown);
-                        _subtitleDirty = true;
+                        _cueSource = shown;    // Update ho rozseká na cue
+                        _cueSourceDirty = true;
                     }
                 });
                 return;
             }
-            _pendingSubtitle = chunk == null
-                ? null : TextCleaner.SanitizeForDisplay(chunk);
-            _subtitleDirty = true;
+            _cueSource = chunk;    // null = konec čtení
+            _cueSourceDirty = true;
+        }
+
+        /// <summary>Engine hlásí index právě čteného slova (v rámci chunku).
+        /// Jen uložit — mapování na cue dělá Update (jednovláknově).</summary>
+        private void OnTtsWord(int wordIndex) {
+            _currentWordIndex = wordIndex;
+            _haveWordEvents = true;
+        }
+
+        /// <summary>Rozseká úsek textu na titulková cue: max 2 řádky, každý se
+        /// vejde do lineWidthPx (měřeno reálnou šířkou fontu → sedí na jakémkoli
+        /// rozlišení). Zarovnáno na věty, řádek se láme po slovech.</summary>
+        private System.Collections.Generic.List<string> BuildSubtitleCues(
+                string text, int lineWidthPx, int fontSize) {
+            var cues = new System.Collections.Generic.List<string>();
+            if (string.IsNullOrWhiteSpace(text) || _textRenderer == null)
+                return cues;
+            text = System.Text.RegularExpressions.Regex
+                .Replace(text, @"\s+", " ").Trim();
+            var sentences = System.Text.RegularExpressions.Regex
+                .Split(text, @"(?<=[.!?])\s+");
+            foreach (string sent in sentences) {
+                // 1) zabalit větu na řádky (plná šířka)
+                var lines = new System.Collections.Generic.List<string>();
+                string line = "";
+                foreach (string w in sent.Split(' ')) {
+                    if (w.Length == 0) continue;
+                    string cand = line.Length == 0 ? w : line + " " + w;
+                    if (line.Length == 0
+                        || _textRenderer.MeasureWidth(cand, fontSize) <= lineWidthPx)
+                        line = cand;
+                    else { lines.Add(line); line = w; }
+                }
+                if (line.Length > 0) lines.Add(line);
+                // 2) párovat řádky OD KONCE → případný osiřelý (lichý) řádek je
+                //    první PLNÝ řádek, ne poslední 1-slovo (to dělalo cue s
+                //    jediným slovem)
+                var sentCues = new System.Collections.Generic.List<string>();
+                int idx = lines.Count;
+                while (idx > 0) {
+                    int start = Math.Max(0, idx - 2);
+                    sentCues.Add(string.Join(" ",
+                        lines.GetRange(start, idx - start)));
+                    idx = start;
+                }
+                sentCues.Reverse();
+                cues.AddRange(sentCues);
+            }
+            return cues;
+        }
+
+        /// <summary>Index prvního slova každého cue (kumulativně) — pro
+        /// mapování word-boundary indexu z TTS na aktuální cue.</summary>
+        private static int[] BuildCueWordStarts(
+                System.Collections.Generic.List<string> cues) {
+            if (cues == null || cues.Count == 0) return null;
+            var starts = new int[cues.Count];
+            int acc = 0;
+            for (int k = 0; k < cues.Count; k++) {
+                starts[k] = acc;
+                acc += cues[k].Split(' ').Length;
+            }
+            return starts;
         }
 
         /// <summary>Společná OCR část: sejme obrazovku, najde pergamen,
@@ -821,7 +895,7 @@ namespace Frtal.LorebookReader {
                     // Konverzace = světlý text na tmavém → invertovat pro OCR
                     string raw = await OcrService.RecognizeAsync(
                         crop, _ocrLanguage.Value, invert: isConversation);
-                    text = TextCleaner.CleanForTts(raw);
+                    text = TextCleaner.CleanForEncyclopedia(raw);
                 }
 
                 // Nadpis: u pergamenu čteme header nad knížkou,
@@ -926,7 +1000,7 @@ namespace Frtal.LorebookReader {
             if (_voiceEngine.Value == "edge") {
                 try {
                     await _edgeTts.SpeakAsync(
-                        text, edgeVoice, _speakingRate.Value, OnTtsChunk);
+                        text, edgeVoice, _speakingRate.Value, OnTtsChunk, OnTtsWord);
                     return;
                 } catch (Exception edgeEx) {
                     Logger.Warn(edgeEx,
@@ -938,7 +1012,7 @@ namespace Frtal.LorebookReader {
 
             string warning = await _tts.SpeakAsync(
                 text, _voiceName.Value, _speakingRate.Value,
-                speechLang, OnTtsChunk);
+                speechLang, OnTtsChunk, OnTtsWord);
             if (warning != null)
                 ScreenNotification.ShowNotification("Lorebook Reader: " + warning);
         }
@@ -1105,6 +1179,52 @@ namespace Frtal.LorebookReader {
                     _subtitleLabel.Opacity = _subtitleOpacity.Value;
                     // text, viditelnost a pozici v edit módu řídí overlay
                 } else {
+                // titulkové cue: TTS chunk → krátká cue (≤2 řádky), posun v čase
+                int cueBoxW = Math.Max(100, Math.Min(
+                    (int)(GameService.Graphics.SpriteScreen.Size.X * 0.45f),
+                    _subWidthCap > 0 ? _subWidthCap : int.MaxValue));
+                if (_cueSourceDirty) {
+                    _cueSourceDirty = false;
+                    _cues = string.IsNullOrEmpty(_cueSource)
+                        ? null
+                        : BuildSubtitleCues(_cueSource, (int)(cueBoxW * 0.9f),
+                                            _lastFontSize);
+                    _cueWordStart = BuildCueWordStarts(_cues);
+                    _cueIndex = 0;
+                    _cueElapsedMs = 0;
+                    _haveWordEvents = false;
+                    _currentWordIndex = 0;
+                    _pendingSubtitle = (_cues != null && _cues.Count > 0)
+                        ? TextCleaner.SanitizeForDisplay(_cues[0]) : null;
+                    _subtitleDirty = true;
+                } else if (_cues != null && _cues.Count > 0) {
+                    if (_wordSyncValid && _haveWordEvents && _cueWordStart != null) {
+                        // přesný sync: právě čtené slovo → jeho cue
+                        int wi = _currentWordIndex;
+                        int target = _cueIndex;
+                        while (target + 1 < _cues.Count
+                               && wi >= _cueWordStart[target + 1]) target++;
+                        if (target > _cueIndex) {
+                            _cueIndex = target;
+                            _pendingSubtitle =
+                                TextCleaner.SanitizeForDisplay(_cues[_cueIndex]);
+                            _subtitleDirty = true;
+                        }
+                    } else if (_cueIndex < _cues.Count) {
+                        // fallback: odhad rychlosti čtení (bez word eventů / překlad)
+                        _cueElapsedMs += gameTime.ElapsedGameTime.TotalMilliseconds;
+                        double cps = 17.0 * Math.Max(0.5, _speakingRate.Value);
+                        double dur = Math.Max(700.0, Math.Min(7000.0,
+                            _cues[_cueIndex].Length / cps * 1000.0));
+                        if (_cueElapsedMs >= dur && _cueIndex + 1 < _cues.Count) {
+                            _cueIndex++;
+                            _cueElapsedMs = 0;
+                            _pendingSubtitle =
+                                TextCleaner.SanitizeForDisplay(_cues[_cueIndex]);
+                            _subtitleDirty = true;
+                        }
+                    }
+                }
                 if (_subtitleDirty) {
                     _subtitleDirty = false;
                     _subtitleLabel.SubtitleText = _pendingSubtitle ?? "";

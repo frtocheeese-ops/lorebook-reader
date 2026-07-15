@@ -3,6 +3,35 @@
 All notable changes to Lorebook Reader are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## 0.5.1 — 2026-07-14
+
+### Changed
+- Subtitles now sync to the voice at the word level. As the narrator speaks, the
+  module reads word-boundary timing from the speech engine (both the offline
+  Windows voices and the Edge neural voices) and switches each cue exactly when
+  the voice reaches it, instead of estimating from reading speed. It falls back
+  to the estimate if a voice reports no word timing, or in subtitles-only
+  translation mode.
+
+## 0.5.0 — 2026-07-14
+
+### Added
+- Paragraphs are now preserved. OCR detects paragraph breaks from the vertical
+  gaps between lines, and the Encyclopedia stores and shows the text with its
+  original paragraph structure instead of one run-on block.
+- Subtitles are now short, condensed cues (at most two lines) that advance as
+  the text is read, instead of showing a whole block at once. (Precise
+  word-level sync with the voice is planned for a later update.)
+
+## 0.4.2 — 2026-07-14
+
+### Fixed
+- The last line of a lorebook or dialogue was often dropped. The "trim trailing
+  noise" step cut everything after the last sentence-ending period, so whenever
+  OCR missed a closing period (common — it is a tiny dot) the final sentence was
+  lost. It now only strips genuine trailing junk (page numbers, stray marks) and
+  keeps a real closing sentence even without its period.
+
 ## 0.4.1 — 2026-07-12
 
 ### Fixed

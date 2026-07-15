@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -39,7 +40,7 @@ namespace Frtal.LorebookReader {
                             $"Windows OCR language pack for '{languageTag}' is not installed.");
 
                     OcrResult result = await engine.RecognizeAsync(sb);
-                    return string.Join("\n", result.Lines.Select(l => l.Text));
+                    return AssembleWithParagraphs(result);
                 }
             }
         }
@@ -54,6 +55,47 @@ namespace Frtal.LorebookReader {
             string line = (text ?? "").Replace("\r", " ").Replace("\n", " ");
             line = System.Text.RegularExpressions.Regex.Replace(line, @"\s+", " ");
             return line.Trim();
+        }
+
+        /// <summary>Složí řádky OCR do textu a rekonstruuje předěly odstavců:
+        /// když je svislá mezera mezi dvěma řádky výrazně větší než běžná
+        /// rozteč (medián), vloží prázdný řádek (\n\n) = nový odstavec.
+        /// Bounding boxy jsou v upscalované předloze, ale poměr mezera/rozteč
+        /// je bezrozměrný, takže práh platí nezávisle na měřítku.</summary>
+        private static string AssembleWithParagraphs(OcrResult result) {
+            var lines = result?.Lines;
+            if (lines == null || lines.Count == 0) return "";
+
+            var tops = new List<double>(lines.Count);
+            foreach (var line in lines) {
+                double top = double.MaxValue;
+                foreach (var word in line.Words)
+                    if (word.BoundingRect.Y < top) top = word.BoundingRect.Y;
+                tops.Add(top == double.MaxValue ? 0 : top);
+            }
+
+            var deltas = new List<double>(Math.Max(0, tops.Count - 1));
+            for (int i = 1; i < tops.Count; i++)
+                deltas.Add(tops[i] - tops[i - 1]);
+            double pitch = Median(deltas); // běžná rozteč řádků (0 při <2 řádcích)
+
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < lines.Count; i++) {
+                if (i > 0) {
+                    double delta = tops[i] - tops[i - 1];
+                    bool paragraphBreak = pitch > 0 && delta > pitch * 1.5;
+                    sb.Append(paragraphBreak ? "\n\n" : "\n");
+                }
+                sb.Append(lines[i].Text);
+            }
+            return sb.ToString();
+        }
+
+        private static double Median(List<double> xs) {
+            if (xs == null || xs.Count == 0) return 0;
+            var s = xs.OrderBy(x => x).ToList();
+            int n = s.Count;
+            return (n % 2 == 1) ? s[n / 2] : (s[n / 2 - 1] + s[n / 2]) / 2.0;
         }
 
         /// <summary>Grayscale + 2x upscale. Volitelná inverze pro

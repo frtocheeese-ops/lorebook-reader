@@ -35,29 +35,63 @@ namespace Frtal.LorebookReader {
             while (lines.Count > 0 && !IsGoodLine(lines[lines.Count - 1]))
                 lines.RemoveAt(lines.Count - 1);
 
-            string text = Regex.Replace(string.Join(" ", lines), @"\s+", " ");
+            // TTS/titulky = plynulý text: všechny řádky do jednoho odstavce
+            return TrimTrailingNoise(CleanInline(string.Join(" ", lines)));
+        }
 
+        /// <summary>Text pro ENCYKLOPEDII — co nejblíž originálu: zachová
+        /// odstavce (předěly z OCR, oddělené prázdným řádkem), každý odstavec
+        /// jen vyčistí (záměny znaků) a zreflowuje zalomené řádky do jednoho.</summary>
+        public static string CleanForEncyclopedia(string raw) {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            // odstavce = bloky oddělené prázdným řádkem (z OcrService)
+            var paras = Regex.Split(raw, @"\n[ \t]*\n");
+            var outParas = new System.Collections.Generic.List<string>();
+            foreach (string para in paras) {
+                var plines = para.Split('\n')
+                                 .Select(l => l.Trim())
+                                 .Where(l => l.Length > 0);
+                string joined = CleanInline(string.Join(" ", plines));
+                if (joined.Length > 0) outParas.Add(joined);
+            }
+            // odstranit koncové ne-odstavce (číslo stránky, dekorace)
+            while (outParas.Count > 0
+                   && !IsGoodLine(outParas[outParas.Count - 1]))
+                outParas.RemoveAt(outParas.Count - 1);
+            return string.Join("\n\n", outParas).Trim();
+        }
+
+        /// <summary>Společné inline čištění spojeného textu (záměny znaků,
+        /// |→I, OCR uvozovky) — bez strukturálních zásahů (řádky/odstavce/konec).</summary>
+        private static string CleanInline(string text) {
+            text = Regex.Replace(text, @"\s+", " ");
             // samostatné '|' před malým písmenem bývá 'I'; jinde dekorace
             text = Regex.Replace(text, @"(?<![\w])\|(?=\s+[a-z])", "I");
             text = Regex.Replace(text, @"(?<![\w])\|(?![\w])", " ");
-
-            // OCR čte uvozovky (") jako "11" — smazat jen přilepené výskyty;
-            // skutečná čísla ("11 days") zůstávají
+            // OCR čte uvozovky (") jako "11" — jen přilepené výskyty
             text = Regex.Replace(text, @"(?<=[A-Za-z,.!?;:])11(?=\s|$)", " ");
             text = Regex.Replace(text, @"(?<!\w)11(?=[A-Za-z])", " ");
             text = Regex.Replace(text, @" {2,}", " ");
-
-            // opravit zaměnitelné znaky (0↔O, 1↔I/l, |↔I atd.)
             // osamocené "1" před malým písmenem → "I" (jako "I wake")
             text = Regex.Replace(text, @"(?<!\w)1(?=\s+[a-z])", "I");
-            // "J" na začátku věty/slova → "I" (GW2 font: I vypadá jako J)
+            // "J" na začátku slova → "I" (GW2 font: I vypadá jako J)
             text = Regex.Replace(text, @"(?<![A-Za-z])J(?=\s+[a-z])", "I");
             text = FixConfusableChars(text);
+            return text.Trim();
+        }
 
-            // oříznout šum za poslední dokončenou větou
-            Match m = Regex.Match(text, @".*[.!?][""')\]]*", RegexOptions.Singleline);
-            if (m.Success) text = m.Value;
-
+        /// <summary>Ořízne jen šum za poslední větou (číslo stránky, artefakt),
+        /// NE reálnou poslední větu, které OCR jen ztratilo koncovou tečku.
+        /// Ocas za posledním .!? zahodí jen tehdy, když v něm není skutečné
+        /// slovo (2+ písmena za sebou).</summary>
+        private static string TrimTrailingNoise(string text) {
+            Match m = Regex.Match(text,
+                @"^(.*[.!?][""')\]]*)(.*)$", RegexOptions.Singleline);
+            if (m.Success) {
+                string tail = m.Groups[2].Value.Trim();
+                if (tail.Length > 0 && !Regex.IsMatch(tail, @"[A-Za-z]{2,}"))
+                    text = m.Groups[1].Value;
+            }
             return text.Trim();
         }
 
@@ -240,6 +274,10 @@ namespace Frtal.LorebookReader {
                 string text, int maxLen = 200) {
             if (string.IsNullOrWhiteSpace(text))
                 return new System.Collections.Generic.List<string>();
+
+            // sjednotit whitespace (odstavce z encyklopedie → mezera):
+            // TTS i titulky pracují s plynulým textem
+            text = Regex.Replace(text, @"\s+", " ").Trim();
 
             // 1) Rozdělit na věty
             string[] sentences = Regex.Split(text, @"(?<=[.!?\u2026])\s+");
