@@ -25,6 +25,10 @@ namespace Frtal.LorebookReader {
         public string TranslatedText { get; set; }
         public string TranslatedLang { get; set; }
 
+        // NEW badge: false = zatím neotevřeno v encyklopedii. Default true,
+        // aby staré záznamy (bez pole v JSON) nenaskočily všechny jako NEW.
+        public bool Opened { get; set; } = true;
+
         public LorebookEntry() {
             Id = Guid.NewGuid().ToString("N");
         }
@@ -85,7 +89,6 @@ namespace Frtal.LorebookReader {
 
         private readonly List<LorebookEntry> _entries = new List<LorebookEntry>();
         private readonly string _filePath;
-        private int _capacity;
         private readonly object _lock = new object();
 
         // P0.3: když se poškozený catalog.json nepodaří odklidit do karantény,
@@ -99,19 +102,9 @@ namespace Frtal.LorebookReader {
 
         public event Action Changed;
 
-        public LorebookCatalog(string directory, int capacity) {
-            _capacity = Math.Max(1, capacity);
+        public LorebookCatalog(string directory) {
             _filePath = Path.Combine(directory, "catalog.json");
             Load();
-        }
-
-        public void SetCapacity(int capacity) {
-            lock (_lock) {
-                _capacity = Math.Max(1, capacity);
-                TrimToCapacity();
-                Save();
-            }
-            Changed?.Invoke();
         }
 
         public IReadOnlyList<LorebookEntry> All {
@@ -135,10 +128,10 @@ namespace Frtal.LorebookReader {
                             ? MakeFallbackTitle(text) : title,
                         Text = text,
                         TimestampUtc = DateTime.UtcNow.ToString("o"),
-                        ColorTag = "None"
+                        ColorTag = "None",
+                        Opened = false   // NEW badge do prvního otevření
                     };
                     _entries.Insert(0, entry);
-                    TrimToCapacity();
                     Save();
                 }
             }
@@ -174,6 +167,7 @@ namespace Frtal.LorebookReader {
                     ? text
                     : latest.Text.TrimEnd() + "\n\n" + text.TrimStart();
                 latest.TimestampUtc = DateTime.UtcNow.ToString("o");
+                latest.Opened = false; // nový obsah → zase NEW
                 // překlad se připojením znehodnotí -> zrušit, ať nesedí půl na půl
                 latest.TranslatedText = null;
                 latest.TranslatedLang = null;
@@ -302,29 +296,7 @@ namespace Frtal.LorebookReader {
             !string.IsNullOrEmpty(haystack) &&
             haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
 
-        /// <summary>Má záznam uživatelská metadata (štítek, poznámky…)?
-        /// Takové knihy capacity trim nikdy nemaže — uživatel do nich
-        /// investoval práci. Uložený překlad je derivát (jde vygenerovat
-        /// znovu), proto knihu před trimem nechrání.</summary>
-        private static bool HasUserMetadata(LorebookEntry e) =>
-            (!string.IsNullOrWhiteSpace(e.ColorTag)
-                && !string.Equals(e.ColorTag, "None",
-                    StringComparison.OrdinalIgnoreCase))
-            || !string.IsNullOrWhiteSpace(e.Notes)
-            || !string.IsNullOrWhiteSpace(e.Theme)
-            || !string.IsNullOrWhiteSpace(e.Expansion)
-            || !string.IsNullOrWhiteSpace(e.Location)
-            || !string.IsNullOrWhiteSpace(e.IconKey);
-
-        private void TrimToCapacity() {
-            // maže se od konce seznamu (nejstarší), auto-záznamy napřed;
-            // když zbývají jen otagované knihy, kapacita se smí přešvihnout
-            for (int i = _entries.Count - 1;
-                 i >= 0 && _entries.Count > _capacity; i--) {
-                if (!HasUserMetadata(_entries[i]))
-                    _entries.RemoveAt(i);
-            }
-        }
+        // (limit katalogu zrušen v 0.6.0 — encyklopedie roste bez omezení)
 
         private static bool TryLoadFile(string path,
                                         out List<LorebookEntry> entries) {

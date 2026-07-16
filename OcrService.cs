@@ -57,34 +57,55 @@ namespace Frtal.LorebookReader {
             return line.Trim();
         }
 
-        /// <summary>Složí řádky OCR do textu a rekonstruuje předěly odstavců:
-        /// když je svislá mezera mezi dvěma řádky výrazně větší než běžná
-        /// rozteč (medián), vloží prázdný řádek (\n\n) = nový odstavec.
-        /// Bounding boxy jsou v upscalované předloze, ale poměr mezera/rozteč
-        /// je bezrozměrný, takže práh platí nezávisle na měřítku.</summary>
+        /// <summary>Složí řádky OCR do textu a rekonstruuje strukturu:
+        /// 1) předěly odstavců — svislá mezera výrazně větší než běžná
+        ///    rozteč (medián) → prázdný řádek (\n\n);
+        /// 2) NADPISY — výrazně kratší řádek, po kterém text pokračuje bez
+        ///    mezery (kurzívní/tučné titulky sekcí, např. „The Flamebearer"),
+        ///    se odělí jako vlastní odstavec, aby ho reflow nevléval do věty.
+        /// Poměry mezera/rozteč i šířka/medián jsou bezrozměrné, takže prahy
+        /// platí nezávisle na rozlišení.</summary>
         private static string AssembleWithParagraphs(OcrResult result) {
             var lines = result?.Lines;
             if (lines == null || lines.Count == 0) return "";
 
-            var tops = new List<double>(lines.Count);
+            int n = lines.Count;
+            var tops   = new List<double>(n);
+            var widths = new List<double>(n);
             foreach (var line in lines) {
-                double top = double.MaxValue;
-                foreach (var word in line.Words)
-                    if (word.BoundingRect.Y < top) top = word.BoundingRect.Y;
+                double top = double.MaxValue, l = double.MaxValue, r = 0;
+                foreach (var word in line.Words) {
+                    var b = word.BoundingRect;
+                    if (b.Y < top) top = b.Y;
+                    if (b.X < l) l = b.X;
+                    if (b.X + b.Width > r) r = b.X + b.Width;
+                }
                 tops.Add(top == double.MaxValue ? 0 : top);
+                widths.Add(r > l ? r - l : 0);
             }
 
-            var deltas = new List<double>(Math.Max(0, tops.Count - 1));
-            for (int i = 1; i < tops.Count; i++)
+            var deltas = new List<double>(Math.Max(0, n - 1));
+            for (int i = 1; i < n; i++)
                 deltas.Add(tops[i] - tops[i - 1]);
-            double pitch = Median(deltas); // běžná rozteč řádků (0 při <2 řádcích)
+            double pitch = Median(deltas);    // běžná rozteč (0 při <2 řádcích)
+            double medWidth = Median(widths); // typická šířka plného řádku
+
+            // nadpis: řádek < 62 % typické šířky, po němž následuje řádek
+            // v běžné rozteči (poslední krátký řádek odstavce nadpis není —
+            // po něm přijde mezera nebo nic)
+            bool IsHeading(int i) =>
+                pitch > 0 && medWidth > 0 && n >= 3
+                && widths[i] < medWidth * 0.62
+                && i + 1 < n && (tops[i + 1] - tops[i]) <= pitch * 1.5;
 
             var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < lines.Count; i++) {
+            for (int i = 0; i < n; i++) {
                 if (i > 0) {
                     double delta = tops[i] - tops[i - 1];
-                    bool paragraphBreak = pitch > 0 && delta > pitch * 1.5;
-                    sb.Append(paragraphBreak ? "\n\n" : "\n");
+                    bool brk = (pitch > 0 && delta > pitch * 1.5)
+                               || IsHeading(i - 1)   // za nadpisem
+                               || IsHeading(i);      // před nadpisem
+                    sb.Append(brk ? "\n\n" : "\n");
                 }
                 sb.Append(lines[i].Text);
             }

@@ -3,6 +3,42 @@
 All notable changes to Lorebook Reader are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## 0.7.0 — 2026-07-16
+
+The encyclopedia visual remake. (Includes the unreleased 0.6.0 work.)
+
+### Added
+- **Expansion rail.** The expansion filter is now a left-hand rail listing
+  every expansion with its icon and book count, plus "All books" and
+  "No expansion". The rail collapses to icons only (« button) so the window
+  stays compact on low resolutions; the state is remembered.
+- **Book reader.** The preview is now a real book: page 0 is a cover with the
+  title in a serif book font, decorative rules, the capture date and location
+  (date shown in each user's own regional format), and — when an expansion is
+  set — the expansion logo pressed onto the cover as a slightly rotated stamp
+  (`ref/xp_*_big.png`, falls back to the small icon). Pages turn one at a time
+  with a page-turn animation (‹ ›), and a page counter sits at the bottom.
+- **Expansion presets.** The Expansion field in the editor is a dropdown with
+  Core, Heart of Thorns, Path of Fire, Icebrood Saga, End of Dragons, Secrets
+  of the Obscure, Janthir Wilds and Visions of Eternity (older custom values
+  are kept). Matching icons (`ref/xp_*.png`) show in the rail, the list and
+  the preview.
+- **NEW badge.** Books you have not opened yet show a gold NEW tag in the
+  list; it disappears once you open them. Appending a page marks the book NEW
+  again. Existing catalogs are not affected (old books never start as NEW).
+- **Delete confirmation.** Deleting a book now shows green Confirm / red
+  Cancel buttons, so a stray click can no longer wipe an entry.
+
+### Changed
+- The encyclopedia no longer has a size limit — the "Catalog size" setting is
+  gone and nothing is trimmed automatically. Existing catalogs are untouched.
+
+### Fixed
+- Section headings (bold/italic lines such as "The Flamebearer") were being
+  merged into the following sentence. Short lines followed directly by text
+  are now kept as their own block, so headed sections read correctly in the
+  encyclopedia.
+
 ## 0.5.1 — 2026-07-14
 
 ### Changed

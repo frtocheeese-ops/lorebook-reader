@@ -428,24 +428,6 @@ namespace Frtal.LorebookReader {
                 Parent         = panel
             };
 
-            var capLabel = new Label {
-                Text           = "Catalog size: " + _module.HistoryCapacitySetting.Value,
-                AutoSizeWidth  = true,
-                AutoSizeHeight = true,
-                Parent         = panel
-            };
-            var capBar = new TrackBar {
-                MinValue = 5, MaxValue = 100,
-                Value    = _module.HistoryCapacitySetting.Value,
-                Width    = 360, Parent = panel
-            };
-            capBar.ValueChanged += (s, e) => {
-                int v2 = (int)Math.Round(capBar.Value);
-                _module.HistoryCapacitySetting.Value = v2;
-                capLabel.Text = "Catalog size: " + v2;
-                _module.Catalog?.SetCapacity(v2);
-            };
-
             UpdateEngineVisibility();
         }
 

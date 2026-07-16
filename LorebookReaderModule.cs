@@ -40,7 +40,6 @@ namespace Frtal.LorebookReader {
         private SettingEntry<int>        _subtitleFontSize;  // 18/24/32/36
         private SettingEntry<string>     _translateMode;     // off/subtitles/full
         private SettingEntry<string>     _translateTarget;   // kód jazyka
-        private SettingEntry<int>        _historyCapacity;
         private SettingEntry<bool>       _conversationCapture; // conversation OCR toggle
         private SettingEntry<KeyBinding> _convToggleKeybind;   // keybind pro toggle
         private SettingEntry<KeyBinding> _debugDumpKeybind;    // P1.1: debug capture
@@ -48,6 +47,7 @@ namespace Frtal.LorebookReader {
         private SettingEntry<KeyBinding> _calibrateKeybind;    // kalibrace zóny dialogu
         private SettingEntry<string>     _bookZone;            // OCR pole knížky (px + stamp)
         private SettingEntry<KeyBinding> _bookCalibrateKeybind;
+        private SettingEntry<bool>       _encRailCollapsed;    // rail encyklopedie jen ikony
 
         // přístup pro LorebookSettingsView
         internal SettingEntry<KeyBinding> ReadKeybindSetting       => _readKeybind;
@@ -65,7 +65,6 @@ namespace Frtal.LorebookReader {
         internal SettingEntry<int>        SubtitleFontSizeSetting  => _subtitleFontSize;
         internal SettingEntry<string>     TranslateModeSetting     => _translateMode;
         internal SettingEntry<string>     TranslateTargetSetting   => _translateTarget;
-        internal SettingEntry<int>        HistoryCapacitySetting   => _historyCapacity;
         internal SettingEntry<bool>       ConversationCaptureSetting => _conversationCapture;
         internal SettingEntry<KeyBinding> ConvToggleKeybindSetting   => _convToggleKeybind;
         internal SettingEntry<KeyBinding> DebugDumpKeybindSetting    => _debugDumpKeybind;
@@ -73,6 +72,7 @@ namespace Frtal.LorebookReader {
         internal SettingEntry<KeyBinding> CalibrateKeybindSetting    => _calibrateKeybind;
         internal SettingEntry<string>     BookZoneSetting            => _bookZone;
         internal SettingEntry<KeyBinding> BookCalibrateKeybindSetting => _bookCalibrateKeybind;
+        internal SettingEntry<bool>       EncyclopediaRailCollapsedSetting => _encRailCollapsed;
 
         // --- stav ---
         private TtsService _tts;
@@ -213,11 +213,6 @@ namespace Frtal.LorebookReader {
                 () => "Translate to",
                 () => "Target language for translation.");
 
-            _historyCapacity = settings.DefineSetting(
-                "HistoryCapacity", 10,
-                () => "History size",
-                () => "How many recently read lorebooks to keep.");
-
             _conversationCapture = settings.DefineSetting(
                 "ConversationCapture", false,
                 () => "Conversation capture mode",
@@ -266,6 +261,11 @@ namespace Frtal.LorebookReader {
                 () => "Calibrate lorebook OCR area",
                 () => "Open a lorebook, then press this to drag a frame over the "
                     + "book text. Fixes text getting cut off. Once per resolution.");
+
+            _encRailCollapsed = settings.DefineSetting(
+                "EncyclopediaRailCollapsed", false,
+                () => "Encyclopedia expansion rail collapsed",
+                () => "Internal: the expansion rail shows icons only.");
         }
 
         protected override async Task LoadAsync() {
@@ -275,7 +275,7 @@ namespace Frtal.LorebookReader {
 
             string dir = ModuleParameters.DirectoriesManager
                 .GetFullDirectoryPath("lorebook_reader");
-            _catalog = new LorebookCatalog(dir, _historyCapacity.Value);
+            _catalog = new LorebookCatalog(dir);
             _catalog.Changed += () => _catalogDirty = true;
             Logger.Info("Available TTS voices: "
                         + string.Join(", ", TtsService.InstalledVoices()
@@ -1017,6 +1017,53 @@ namespace Frtal.LorebookReader {
                 ScreenNotification.ShowNotification("Lorebook Reader: " + warning);
         }
 
+        // --- ikony datadisků pro encyklopedii (ref/xp_*.png) ---
+        // cache; chybějící soubor = null → UI ikonu prostě nevykreslí
+        private readonly System.Collections.Generic.Dictionary<string, Texture2D>
+            _xpIconCache = new System.Collections.Generic.Dictionary<string, Texture2D>(
+                StringComparer.OrdinalIgnoreCase);
+
+        private static string ExpansionIconFile(string expansion) {
+            if (string.IsNullOrWhiteSpace(expansion)) return null;
+            switch (expansion.Trim().ToLowerInvariant()) {
+                case "core":                   return "xp_core.png";
+                case "heart of thorns":        return "xp_hot.png";
+                case "path of fire":           return "xp_pof.png";
+                case "icebrood saga":          return "xp_ibs.png";
+                case "end of dragons":         return "xp_eod.png";
+                case "secrets of the obscure": return "xp_soto.png";
+                case "janthir wilds":          return "xp_jw.png";
+                case "visions of eternity":    return "xp_voe.png";
+                default: return null;
+            }
+        }
+
+        private Texture2D LoadRefTexture(string file) {
+            if (file == null) return null;
+            if (_xpIconCache.TryGetValue(file, out var cached)) return cached;
+            Texture2D tex = null;
+            try {
+                using (var s = ModuleParameters.ContentsManager.GetFileStream(file))
+                    if (s != null)
+                        tex = Blish_HUD.TextureUtil.FromStreamPremultiplied(s);
+            } catch { tex = null; }
+            _xpIconCache[file] = tex;
+            return tex;
+        }
+
+        /// <summary>Malá ikona datadisku (rail, seznam, náhled).</summary>
+        internal Texture2D GetExpansionIcon(string expansion) =>
+            LoadRefTexture(ExpansionIconFile(expansion));
+
+        /// <summary>Velké logo pro razítko na obálce: preferuje
+        /// ref/xp_*_big.png (~256 px), jinak padne na malou ikonu.</summary>
+        internal Texture2D GetExpansionStampIcon(string expansion) {
+            string file = ExpansionIconFile(expansion);
+            if (file == null) return null;
+            return LoadRefTexture(file.Replace(".png", "_big.png"))
+                   ?? LoadRefTexture(file);
+        }
+
         /// <summary>OCR pruhu nad pergamenem (název knihy). Chyba => null.</summary>
         private string TryReadHeader(Bitmap screen, Rectangle parchment) {
             try {
@@ -1362,6 +1409,8 @@ namespace Frtal.LorebookReader {
             _historyWindow?.Dispose();
             _tts?.Dispose();
             _edgeTts?.Dispose();
+            foreach (var t in _xpIconCache.Values) t?.Dispose();
+            _xpIconCache.Clear();
         }
     }
 }

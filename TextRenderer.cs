@@ -31,7 +31,15 @@ namespace Frtal.LorebookReader {
         private static readonly string[] FontCandidates = {
             "Cantarell", "Segoe UI", "Tahoma", "Arial"
         };
-        private static readonly string ResolvedFamily = ResolveFontFamily();
+        private static readonly string ResolvedFamily =
+            ResolveFontFamily(FontCandidates, "Arial");
+
+        // patkové písmo pro titulní strany knih (stylistický dojem obálky)
+        private static readonly string[] SerifCandidates = {
+            "Palatino Linotype", "Book Antiqua", "Georgia", "Times New Roman"
+        };
+        private static readonly string ResolvedSerifFamily =
+            ResolveFontFamily(SerifCandidates, "Georgia");
 
         public TextRenderer(GraphicsDevice graphicsDevice) {
             _graphicsDevice = graphicsDevice;
@@ -41,13 +49,13 @@ namespace Frtal.LorebookReader {
         /// Vykreslí (případně vrátí z cache) jeden řádek textu jako texturu.
         /// </summary>
         public Texture2D RenderLine(string text, float fontSize, XnaColor color,
-                                    bool bold = false) {
+                                    bool bold = false, bool serif = false) {
             if (string.IsNullOrEmpty(text)) return null;
-            string key = $"{fontSize}|{(bold ? 1 : 0)}|{color.PackedValue}|{text}";
+            string key = $"{fontSize}|{(bold ? 1 : 0)}{(serif ? "s" : "")}|{color.PackedValue}|{text}";
             if (_cache.TryGetValue(key, out var cached))
                 return cached;
 
-            Texture2D tex = Render(text, fontSize, color, bold);
+            Texture2D tex = Render(text, fontSize, color, bold, serif);
             _cache[key] = tex;
             _cacheOrder.Enqueue(key);
             if (_cacheOrder.Count > MaxCache) {
@@ -62,11 +70,12 @@ namespace Frtal.LorebookReader {
 
         /// <summary>Změří šířku textu bez vykreslení (pro zalamování).
         /// Používá sdílený measuring context — žádné alokace per volání.</summary>
-        public float MeasureWidth(string text, float fontSize, bool bold = false) {
+        public float MeasureWidth(string text, float fontSize, bool bold = false,
+                                  bool serif = false) {
             if (string.IsNullOrEmpty(text)) return 0;
             lock (_measureLock) {
                 EnsureMeasureContext();
-                using (var font = MakeFont(fontSize, bold)) {
+                using (var font = MakeFont(fontSize, bold, serif)) {
                     return _measureGraphics.MeasureString(text, font,
                         int.MaxValue, StringFormat.GenericTypographic).Width;
                 }
@@ -88,7 +97,7 @@ namespace Frtal.LorebookReader {
 
         /// <summary>Zalomí text na řádky podle skutečné GDI šířky.</summary>
         public List<string> WrapText(string text, float fontSize, int maxWidth,
-                                     bool bold = false) {
+                                     bool bold = false, bool serif = false) {
             var lines = new List<string>();
             if (string.IsNullOrEmpty(text)) return lines;
             foreach (string paragraph in text.Replace("\r", "").Split('\n')) {
@@ -98,7 +107,7 @@ namespace Frtal.LorebookReader {
                 foreach (string word in words) {
                     string candidate = current.Length == 0
                         ? word : current + " " + word;
-                    if (MeasureWidth(candidate, fontSize, bold) <= maxWidth
+                    if (MeasureWidth(candidate, fontSize, bold, serif) <= maxWidth
                         || current.Length == 0) {
                         current = candidate;
                     } else {
@@ -115,11 +124,13 @@ namespace Frtal.LorebookReader {
         private readonly Dictionary<long, float> _lineHeightCache =
             new Dictionary<long, float>();
 
-        public float LineHeight(float fontSize, bool bold = false) {
-            long key = ((long)(fontSize * 10) << 1) | (bold ? 1L : 0L);
+        public float LineHeight(float fontSize, bool bold = false,
+                                bool serif = false) {
+            long key = ((long)(fontSize * 10) << 2)
+                       | (bold ? 1L : 0L) | (serif ? 2L : 0L);
             if (_lineHeightCache.TryGetValue(key, out float h))
                 return h;
-            using (var font = MakeFont(fontSize, bold))
+            using (var font = MakeFont(fontSize, bold, serif))
                 h = font.GetHeight();
             _lineHeightCache[key] = h;
             return h;
@@ -128,8 +139,8 @@ namespace Frtal.LorebookReader {
         // ---------------------------------------------------------------------
 
         private Texture2D Render(string text, float fontSize, XnaColor color,
-                                 bool bold) {
-            using (var font = MakeFont(fontSize, bold)) {
+                                 bool bold, bool serif = false) {
+            using (var font = MakeFont(fontSize, bold, serif)) {
                 int w, h;
                 using (var measureBmp = new Bitmap(1, 1))
                 using (var mg = Graphics.FromImage(measureBmp)) {
@@ -187,22 +198,23 @@ namespace Frtal.LorebookReader {
             }
         }
 
-        private static Font MakeFont(float size, bool bold) =>
-            new Font(ResolvedFamily, size,
+        private static Font MakeFont(float size, bool bold, bool serif = false) =>
+            new Font(serif ? ResolvedSerifFamily : ResolvedFamily, size,
                 bold ? FontStyle.Bold : FontStyle.Regular, GraphicsUnit.Pixel);
 
-        private static string ResolveFontFamily() {
+        private static string ResolveFontFamily(string[] candidates,
+                                                string fallback) {
             try {
                 using (var installed = new InstalledFontCollection()) {
                     var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var fam in installed.Families)
                         names.Add(fam.Name);
-                    foreach (string candidate in FontCandidates)
+                    foreach (string candidate in candidates)
                         if (names.Contains(candidate))
                             return candidate;
                 }
             } catch { /* fallback níže */ }
-            return "Arial";
+            return fallback;
         }
 
         public void Dispose() {

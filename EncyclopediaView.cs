@@ -28,7 +28,8 @@ namespace Frtal.LorebookReader {
         private TextBox _searchBox;
         private Dropdown _sortDropdown;
         private Dropdown _colorFilter;
-        private Dropdown _expansionFilter;
+        private Panel _railPanel;      // rail datadisků (ikony + počty)
+        private string _filterXp;      // null = vše, "" = bez datadisku, jinak název
         private FlowPanel _listPanel;
         private StandardButton _exportBtn, _importBtn;
 
@@ -65,26 +66,35 @@ namespace Frtal.LorebookReader {
             // Použití .Width/.Height by zahrnulo rámeček a obsah by přetékal.
             int totalW = _root.ContentRegion.Width;
             int totalH = _root.ContentRegion.Height;
-            int leftW = Math.Max(280, (int)(totalW * 0.40f));
+            bool railMini = _module.EncyclopediaRailCollapsedSetting.Value;
+            int railW = railMini ? 54 : 236; // expanded: vejde se i „Secrets of the Obscure"
+            int listX = 8 + railW + 8;
+            int leftW = Math.Max(250, (int)((totalW - railW) * 0.40f));
+
+            // ============ RAIL DATADISKŮ (sbalitelný, viz redesign doc) ============
+            _railPanel = new Panel {
+                Parent = _root, Location = new Point(8, 6),
+                Width = railW, Height = totalH - 14, ShowBorder = true
+            };
+            FillRail();
 
             // ===================== LEVÝ PANEL =====================
             _searchBox = new TextBox {
-                Parent = _root, Location = new Point(8, 6),
-                Width = leftW - 16,
+                Parent = _root, Location = new Point(listX, 6),
+                Width = leftW - 8,
                 PlaceholderText = "Search title, text, metadata…"
             };
             _searchBox.TextChanged += (s, e) => RefreshList();
 
             _sortDropdown = new Dropdown {
-                Parent = _root, Location = new Point(8, 38), Width = leftW - 16
+                Parent = _root, Location = new Point(listX, 38), Width = leftW - 8
             };
             foreach (string item in SortItems) _sortDropdown.Items.Add(item);
             _sortDropdown.SelectedItem = SortItems[0];
             _sortDropdown.ValueChanged += (s, e) => RefreshList();
 
-            int halfW = (leftW - 24) / 2;
             _colorFilter = new Dropdown {
-                Parent = _root, Location = new Point(8, 70), Width = halfW
+                Parent = _root, Location = new Point(listX, 70), Width = leftW - 8
             };
             _colorFilter.Items.Add("All");
             foreach (var c in Palette.Colors)
@@ -93,35 +103,31 @@ namespace Frtal.LorebookReader {
             _colorFilter.SelectedItem = "All";
             _colorFilter.ValueChanged += (s, e) => RefreshList();
 
-            _expansionFilter = new Dropdown {
-                Parent = _root, Location = new Point(8 + halfW + 8, 70), Width = halfW
-            };
-            RebuildExpansionFilter();
-            _expansionFilter.ValueChanged += (s, e) => RefreshList();
-
             _listPanel = new FlowPanel {
-                Parent = _root, Location = new Point(8, 102),
-                Width = leftW - 16, Height = totalH - 150,
+                Parent = _root, Location = new Point(listX, 102),
+                Width = leftW - 8, Height = totalH - 150,
                 FlowDirection = ControlFlowDirection.SingleTopToBottom,
                 ControlPadding = new Vector2(0, 3),
                 CanScroll = true, ShowBorder = true
             };
 
+            int halfW = (leftW - 16) / 2;
             _exportBtn = new StandardButton {
-                Parent = _root, Location = new Point(8, totalH - 42),
+                Parent = _root, Location = new Point(listX, totalH - 42),
                 Width = halfW, Text = "Export…"
             };
             _exportBtn.Click += (s, e) => _module.ExportCatalogDialog();
             _importBtn = new StandardButton {
-                Parent = _root, Location = new Point(8 + halfW + 8, totalH - 42),
+                Parent = _root, Location = new Point(listX + halfW + 8, totalH - 42),
                 Width = halfW, Text = "Import…"
             };
             _importBtn.Click += (s, e) => _module.ImportCatalogDialog();
 
             // ===================== PRAVÝ PANEL =====================
+            int detailX = listX + leftW + 8;
             _detailPanel = new Panel {
-                Parent = _root, Location = new Point(leftW + 8, 6),
-                Width = totalW - leftW - 16, Height = totalH - 14,
+                Parent = _root, Location = new Point(detailX, 6),
+                Width = totalW - detailX - 8, Height = totalH - 14,
                 ShowBorder = true
             };
 
@@ -132,15 +138,113 @@ namespace Frtal.LorebookReader {
             else                                               ShowEmpty();
         }
 
-        public void RebuildExpansionFilter() {
-            if (_expansionFilter == null) return;
-            string previous = _expansionFilter.SelectedItem;
-            _expansionFilter.Items.Clear();
-            _expansionFilter.Items.Add("All");
-            foreach (string exp in _catalog.DistinctExpansions())
-                _expansionFilter.Items.Add(exp);
-            _expansionFilter.SelectedItem =
-                _expansionFilter.Items.Contains(previous ?? "All") ? previous : "All";
+        private static readonly (string Name, string Code)[] RailPresets = {
+            ("Core", "GW2"), ("Heart of Thorns", "HoT"),
+            ("Path of Fire", "PoF"), ("Icebrood Saga", "IBS"),
+            ("End of Dragons", "EoD"), ("Secrets of the Obscure", "SotO"),
+            ("Janthir Wilds", "JW"), ("Visions of Eternity", "VoE")
+        };
+
+        /// <summary>Naplní rail datadisků: toggle sbalení, „All books",
+        /// předvolby s počty (ikona z ref/xp_*.png, jinak zkratka), vlastní
+        /// hodnoty z katalogu a „No expansion". Sbalený = jen ikony.</summary>
+        public void FillRail() {
+            if (_railPanel == null) return;
+            _railPanel.ClearChildren();
+            bool mini = _module.EncyclopediaRailCollapsedSetting.Value;
+            int rowW = _railPanel.Width - 8;
+            int y = 4;
+
+            var toggle = new StandardButton {
+                Parent = _railPanel, Location = new Point(4, y),
+                Width = rowW, Text = mini ? "»" : "« Minimize",
+                BasicTooltipText = mini
+                    ? "Expand expansion rail" : "Collapse to icons only"
+            };
+            toggle.Click += (s, e) => {
+                _module.EncyclopediaRailCollapsedSetting.Value = !mini;
+                BuildLayout();
+            };
+            y += 34;
+
+            var counts = new Dictionary<string, int>(
+                StringComparer.OrdinalIgnoreCase);
+            int noXp = 0, total = 0;
+            foreach (var e in _catalog.All) {
+                total++;
+                string xp = (e.Expansion ?? "").Trim();
+                if (xp.Length == 0) noXp++;
+                else counts[xp] = (counts.TryGetValue(xp, out int c) ? c : 0) + 1;
+            }
+
+            y = AddRailRow(y, rowW, mini, null, "All books", "ALL", total);
+            foreach (var (name, code) in RailPresets) {
+                counts.TryGetValue(name, out int c);
+                counts.Remove(name);
+                y = AddRailRow(y, rowW, mini, name, name, code, c);
+            }
+            foreach (var kv in counts.OrderBy(k => k.Key))
+                y = AddRailRow(y, rowW, mini, kv.Key, kv.Key,
+                    kv.Key.Length <= 4 ? kv.Key
+                        : kv.Key.Substring(0, 3) + "…", kv.Value);
+            if (noXp > 0)
+                AddRailRow(y, rowW, mini, "", "No expansion", "—", noXp);
+        }
+
+        private int AddRailRow(int y, int rowW, bool mini, string value,
+                               string label, string code, int count) {
+            bool active = _filterXp == value;
+            var row = new Panel {
+                Parent = _railPanel, Location = new Point(4, y),
+                Width = rowW, Height = 38,
+                BackgroundColor = active
+                    ? new Color(60, 70, 90) : Color.Transparent,
+                BasicTooltipText = $"{label} ({count})"
+            };
+            if (count == 0 && value != null) row.Opacity = 0.45f;
+
+            var icon = value == null || value.Length == 0
+                ? null : _module.GetExpansionIcon(value);
+            int tx;
+            if (icon != null) {
+                new Blish_HUD.Controls.Image(icon) {
+                    Parent = row,
+                    Location = new Point(mini ? (rowW - 26) / 2 : 6, 6),
+                    Size = new Point(26, 26)
+                };
+                tx = 38;
+            } else {
+                new Label {
+                    Parent = row,
+                    Location = new Point(mini ? 0 : 5, 10),
+                    Width = mini ? rowW : 32, Height = 18,
+                    Text = code,
+                    HorizontalAlignment = mini
+                        ? HorizontalAlignment.Center : HorizontalAlignment.Left,
+                    Font = GameService.Content.DefaultFont14
+                };
+                tx = 40;
+            }
+            if (!mini) {
+                new Label {
+                    Parent = row, Location = new Point(tx, 10),
+                    Width = rowW - tx - 28, Height = 18, Text = label,
+                    Font = GameService.Content.DefaultFont14
+                };
+                new Label {
+                    Parent = row, Location = new Point(rowW - 28, 10),
+                    Width = 26, Height = 18, Text = count.ToString(),
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    TextColor = new Color(160, 160, 160),
+                    Font = GameService.Content.DefaultFont14
+                };
+            }
+            row.Click += (s, e) => {
+                _filterXp = value;
+                FillRail();
+                RefreshList();
+            };
+            return y + 42;
         }
 
         private SortMode CurrentSort() {
@@ -158,7 +262,16 @@ namespace Frtal.LorebookReader {
             _listPanel.ClearChildren();
             var results = _catalog.Query(
                 _searchBox?.Text, CurrentSort(),
-                _colorFilter?.SelectedItem, _expansionFilter?.SelectedItem);
+                _colorFilter?.SelectedItem, null);
+            // filtr datadisku řídí rail (null = vše, "" = bez datadisku)
+            if (_filterXp != null) {
+                results = _filterXp.Length == 0
+                    ? results.Where(e =>
+                          string.IsNullOrWhiteSpace(e.Expansion)).ToList()
+                    : results.Where(e => string.Equals(
+                          e.Expansion?.Trim(), _filterXp,
+                          StringComparison.OrdinalIgnoreCase)).ToList();
+            }
 
             if (results.Count == 0) {
                 new Label {
@@ -175,7 +288,7 @@ namespace Frtal.LorebookReader {
         /// další stránky, importu apod.). V editačním režimu detail nechá být,
         /// ať nepřepíše rozeditovaný text uživatele.</summary>
         public void RefreshFromCatalog() {
-            RebuildExpansionFilter();
+            FillRail();
             RefreshList();
             if (_mode == DetailMode.Edit || _selected == null) return;
             LorebookEntry fresh = null;
@@ -197,15 +310,33 @@ namespace Frtal.LorebookReader {
                 Parent = row, Location = new Point(0, 0),
                 Width = 5, Height = 46, BackgroundColor = new Color(cr, cg, cb)
             };
+            int titleX = 12;
+            var xpIcon = _module.GetExpansionIcon(entry.Expansion);
+            if (xpIcon != null) {
+                new Blish_HUD.Controls.Image(xpIcon) {
+                    Parent = row, Location = new Point(10, 13),
+                    Size = new Point(20, 20)
+                };
+                titleX = 34;
+            }
             new Label {
-                Parent = row, Location = new Point(12, 4),
-                Width = row.Width - 20, Height = 22,
+                Parent = row, Location = new Point(titleX, 4),
+                Width = row.Width - titleX - (entry.Opened ? 8 : 46), Height = 22,
                 Text = entry.DisplayTitle, Font = GameService.Content.DefaultFont16
             };
+            if (!entry.Opened) {
+                new Label {
+                    Parent = row, Location = new Point(row.Width - 42, 5),
+                    Width = 36, Height = 16, Text = "NEW",
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    TextColor = new Color(233, 201, 106),
+                    Font = GameService.Content.DefaultFont12
+                };
+            }
             string meta = entry.MetadataLine;
             new Label {
-                Parent = row, Location = new Point(12, 26),
-                Width = row.Width - 20, Height = 16,
+                Parent = row, Location = new Point(titleX, 26),
+                Width = row.Width - titleX - 8, Height = 16,
                 Text = string.IsNullOrEmpty(meta)
                     ? entry.TimestampLocal.ToString("g") : meta,
                 TextColor = new Color(160, 160, 160)
@@ -233,15 +364,43 @@ namespace Frtal.LorebookReader {
         }
 
         // ===================== DETAIL: náhled =====================
+        private static Panel MakeConfirmButton(Container parent, Point loc,
+                                               string text, Color bg) {
+            var p = new Panel {
+                Parent = parent, Location = loc, Width = 80, Height = 26,
+                BackgroundColor = bg
+            };
+            new Label {
+                Parent = p, Location = new Point(0, 3), Width = 80, Height = 20,
+                Text = text, HorizontalAlignment = HorizontalAlignment.Center
+            };
+            return p;
+        }
+
         private void ShowPreview(LorebookEntry entry) {
             _mode = DetailMode.Preview;
+            // NEW badge zhasíná prvním otevřením (Update vyvolá refresh,
+            // fresh záznam už má Opened=true, takže se to nezacyklí)
+            if (!entry.Opened) {
+                entry.Opened = true;
+                _catalog.Update(entry);
+            }
             _detailPanel.ClearChildren();
             int w = _detailPanel.Width;
             int h = _detailPanel.Height;
 
+            int titleX = 12;
+            var pvIcon = _module.GetExpansionIcon(entry.Expansion);
+            if (pvIcon != null) {
+                new Blish_HUD.Controls.Image(pvIcon) {
+                    Parent = _detailPanel, Location = new Point(12, 10),
+                    Size = new Point(26, 26)
+                };
+                titleX = 46;
+            }
             new Label {
-                Parent = _detailPanel, Location = new Point(12, 10),
-                Width = w - 24, Height = 28,
+                Parent = _detailPanel, Location = new Point(titleX, 10),
+                Width = w - titleX - 12, Height = 28,
                 Text = entry.DisplayTitle, Font = GameService.Content.DefaultFont18
             };
 
@@ -265,10 +424,25 @@ namespace Frtal.LorebookReader {
                 Width = 80, Text = "Delete"
             };
             delBtn.Click += (s, e) => {
-                _catalog.Remove(entry.Id);
-                _selected = null;
-                RefreshList();
-                ShowEmpty();
+                // potvrzení proti smazání omylem: místo tlačítka se ukáže
+                // zelené Confirm a červené Cancel (výběr jiné knihy to zruší)
+                delBtn.Visible = false;
+                Panel yes = null, no = null;
+                yes = MakeConfirmButton(_detailPanel, new Point(w - 176, 44),
+                    "Confirm", new Color(52, 122, 60));
+                no = MakeConfirmButton(_detailPanel, new Point(w - 92, 44),
+                    "Cancel", new Color(142, 48, 42));
+                yes.Click += (s2, e2) => {
+                    _catalog.Remove(entry.Id);
+                    _selected = null;
+                    RefreshList();
+                    ShowEmpty();
+                };
+                no.Click += (s2, e2) => {
+                    yes.Dispose();
+                    no.Dispose();
+                    delBtn.Visible = true;
+                };
             };
 
             // ovládání velikosti písma
@@ -295,21 +469,23 @@ namespace Frtal.LorebookReader {
                 body += "\n\n———  " + (entry.TranslatedLang ?? "translation")
                     + "  ———\n\n" + entry.TranslatedText;
 
-            var parchment = new ParchmentTextPanel(_textRenderer, _parchment) {
+            // knižní čtečka: obálka s titulem a razítkem datadisku,
+            // jedna stránka, listování s animací (redesign fáze B)
+            var reader = new BookReaderPanel(_textRenderer, _parchment) {
                 Parent = _detailPanel, Location = new Point(12, 106),
                 Width = w - 24, Height = h - 118,
                 FontSize = _textFontSize
             };
-            parchment.Text = body;
-            parchment.ApplyWrap();   // vynutit zalomení na aktuální šířku
+            reader.SetEntry(entry, body,
+                _module.GetExpansionStampIcon(entry.Expansion));
 
             fontMinus.Click += (s, e) => {
                 _textFontSize = Math.Max(12f, _textFontSize - 2f);
-                parchment.FontSize = _textFontSize;
+                reader.FontSize = _textFontSize;
             };
             fontPlus.Click += (s, e) => {
                 _textFontSize = Math.Min(40f, _textFontSize + 2f);
-                parchment.FontSize = _textFontSize;
+                reader.FontSize = _textFontSize;
             };
         }
 
@@ -347,8 +523,18 @@ namespace Frtal.LorebookReader {
             colorDd.ValueChanged += (s, e) => { entry.ColorTag = colorDd.SelectedItem; Save(entry); };
 
             AddLabel(form, "Expansion");
-            var expBox = AddBox(form, entry.Expansion, formW - 4);
-            expBox.TextChanged += (s, e) => { entry.Expansion = expBox.Text; Save(entry); };
+            var expDd = new Dropdown { Parent = form, Width = formW - 4 };
+            foreach (string xp in ExpansionPresets) expDd.Items.Add(xp);
+            string curXp = string.IsNullOrWhiteSpace(entry.Expansion)
+                ? ExpansionPresets[0] : entry.Expansion.Trim();
+            if (!expDd.Items.Contains(curXp))
+                expDd.Items.Add(curXp); // starší vlastní hodnota — neztratit
+            expDd.SelectedItem = curXp;
+            expDd.ValueChanged += (s, e) => {
+                entry.Expansion = expDd.SelectedItem == ExpansionPresets[0]
+                    ? "" : expDd.SelectedItem;
+                Save(entry);
+            };
 
             AddLabel(form, "Theme");
             var themeBox = AddBox(form, entry.Theme, formW - 4);
@@ -430,6 +616,14 @@ namespace Frtal.LorebookReader {
             _catalog.Update(entry);
             RefreshList();
         }
+
+        /// <summary>Předvolby datadisků (pořadí vydání). První položka =
+        /// „bez datadisku". Ikony: ref/xp_*.png (GetExpansionIcon).</summary>
+        internal static readonly string[] ExpansionPresets = {
+            "(none)", "Core", "Heart of Thorns", "Path of Fire",
+            "Icebrood Saga", "End of Dragons", "Secrets of the Obscure",
+            "Janthir Wilds", "Visions of Eternity"
+        };
 
         // ---------------------------- helpers ----------------------------
         private static void AddLabel(Container parent, string text) {
