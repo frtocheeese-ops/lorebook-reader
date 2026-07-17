@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Blish_HUD;
 using Blish_HUD.Controls;
+using Blish_HUD.Input;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -33,6 +34,8 @@ namespace Frtal.LorebookReader {
 
         private readonly TextRenderer _tr;
         private readonly Texture2D _parchment;
+        private readonly Texture2D _ornament; // rohová ozdoba obálky (volitelné)
+        private readonly Texture2D _seal;     // pečeť pro knihy bez datadisku
 
         private LorebookEntry _entry;
         private string _body = "";
@@ -40,7 +43,10 @@ namespace Frtal.LorebookReader {
         private float _fontSize = 18f;
 
         // stránky: seznam řádků (text, nadpis?, mezera-před?)
-        private struct Line { public string Text; public bool Head; public bool Gap; }
+        // (iniciála/drop cap vyzkoušena v 0.7.1 a na přání odstraněna)
+        private struct Line {
+            public string Text; public bool Head; public bool Gap;
+        }
         private readonly List<List<Line>> _pages = new List<List<Line>>();
         private int _page;          // 0 = obálka, 1..N = _pages[i-1]
         private int _lastLayoutW = -1, _lastLayoutH = -1;
@@ -51,20 +57,51 @@ namespace Frtal.LorebookReader {
         private int _turnDir;       // +1 dopředu, -1 zpět
         private int _pendingPage;
 
-        private readonly StandardButton _prevBtn;
-        private readonly StandardButton _nextBtn;
+        private readonly Control _prevBtn;
+        private readonly Control _nextBtn;
 
-        public BookReaderPanel(TextRenderer tr, Texture2D parchment) {
+        public BookReaderPanel(TextRenderer tr, Texture2D parchment,
+                               Texture2D arrowLeft = null,
+                               Texture2D arrowRight = null,
+                               Texture2D ornament = null,
+                               Texture2D seal = null) {
             _tr = tr;
             _parchment = parchment;
-            _prevBtn = new StandardButton {
-                Parent = this, Text = "‹", Width = 30, Visible = false
-            };
-            _nextBtn = new StandardButton {
-                Parent = this, Text = "›", Width = 30, Visible = false
-            };
+            _ornament = ornament;
+            _seal = seal;
+            _prevBtn = MakeArrow(arrowLeft, "‹");
+            _nextBtn = MakeArrow(arrowRight, "›");
             _prevBtn.Click += (s, e) => Turn(-1);
             _nextBtn.Click += (s, e) => Turn(+1);
+        }
+
+        /// <summary>Kamenný disk z ref/ (hover = plný jas); bez textury
+        /// padne na obyčejné tlačítko se znakem.</summary>
+        private Control MakeArrow(Texture2D tex, string fallback) {
+            if (tex != null)
+                return new ArrowButton(tex) {
+                    Parent = this, Size = new Point(36, 36), Visible = false
+                };
+            return new StandardButton {
+                Parent = this, Text = fallback, Width = 30, Visible = false
+            };
+        }
+
+        private sealed class ArrowButton : Control {
+            private readonly Texture2D _tex;
+            private bool _hover;
+            public ArrowButton(Texture2D tex) { _tex = tex; }
+            protected override CaptureType CapturesInput() => CaptureType.Mouse;
+            protected override void OnMouseEntered(MouseEventArgs e) {
+                _hover = true; base.OnMouseEntered(e);
+            }
+            protected override void OnMouseLeft(MouseEventArgs e) {
+                _hover = false; base.OnMouseLeft(e);
+            }
+            protected override void Paint(SpriteBatch sb, Rectangle bounds) {
+                sb.DrawOnCtrl(this, _tex, bounds, null,
+                    _hover ? Color.White : Color.White * 0.82f);
+            }
         }
 
         public float FontSize {
@@ -215,11 +252,15 @@ namespace Frtal.LorebookReader {
             float f = 1f;
             bool anchorLeft = true;
             if (_turning) {
+                // juice pravidlo: UI animace nikdy lineárně — zavírání
+                // kvadraticky zrychluje (ease-in), otvírání zpomaluje (ease-out)
                 if (_turnT < 0.5) {
-                    f = 1f - (float)(_turnT * 2);         // 1 → 0
+                    double t2 = _turnT * 2;
+                    f = 1f - (float)(t2 * t2);            // 1 → 0, ease-in
                     anchorLeft = _turnDir > 0;            // dopředu: sevři vlevo
                 } else {
-                    f = (float)((_turnT - 0.5) * 2);      // 0 → 1
+                    double t2 = (_turnT - 0.5) * 2;
+                    f = (float)(1 - (1 - t2) * (1 - t2)); // 0 → 1, ease-out
                     anchorLeft = _turnDir < 0;            // dopředu: rozviň zprava
                 }
                 f = Math.Max(0.02f, Math.Min(1f, f));
@@ -240,6 +281,11 @@ namespace Frtal.LorebookReader {
                 sb.DrawOnCtrl(this, ContentService.Textures.Pixel, pageRect,
                     new Color(231, 217, 182));
 
+            // patina okrajů — stránka nepůsobí jako plochá textura
+            DrawEdge(sb, pageRect, 6, FaintInk * 0.08f);
+            DrawEdge(sb, pageRect, 3, FaintInk * 0.10f);
+            DrawEdge(sb, pageRect, 1, FaintInk * 0.30f);
+
             if (_page == 0) PaintCover(sb, bounds, pageRect, f, anchorLeft);
             else            PaintPage(sb, bounds, pageRect, f, anchorLeft);
 
@@ -252,6 +298,15 @@ namespace Frtal.LorebookReader {
                         bounds.X + (fullW - t.Width) / 2,
                         bounds.Bottom - t.Height - 4, t.Width, t.Height));
             }
+        }
+
+        /// <summary>Rámeček z pruhů dané tloušťky po obvodu (patina).</summary>
+        private void DrawEdge(SpriteBatch sb, Rectangle r, int t, Color c) {
+            var px = ContentService.Textures.Pixel;
+            sb.DrawOnCtrl(this, px, new Rectangle(r.X, r.Y, r.Width, t), c);
+            sb.DrawOnCtrl(this, px, new Rectangle(r.X, r.Bottom - t, r.Width, t), c);
+            sb.DrawOnCtrl(this, px, new Rectangle(r.X, r.Y, t, r.Height), c);
+            sb.DrawOnCtrl(this, px, new Rectangle(r.Right - t, r.Y, t, r.Height), c);
         }
 
         /// <summary>Přepočet X souřadnice do „stisknutého" listu.</summary>
@@ -289,6 +344,27 @@ namespace Frtal.LorebookReader {
         private void PaintCover(SpriteBatch sb, Rectangle bounds,
                                 Rectangle page, float f, bool anchorLeft) {
             int fullW = bounds.Width;
+
+            // zlaté ornamenty v rozích obálky (jedna textura, zrcadlení)
+            if (_ornament != null) {
+                int os = Math.Min(56, fullW / 6);
+                const int inset = 8;
+                void Corner(float cx, int cy2, SpriteEffects fx) {
+                    int dx = SqueezeX(bounds, page, f, anchorLeft, cx);
+                    sb.DrawOnCtrl(this, _ornament,
+                        new Rectangle(dx, cy2, (int)(os * f), os),
+                        null, Color.White * 0.9f, 0f, Vector2.Zero, fx);
+                }
+                Corner(bounds.X + inset, bounds.Y + inset,
+                       SpriteEffects.None);
+                Corner(bounds.Right - inset - os, bounds.Y + inset,
+                       SpriteEffects.FlipHorizontally);
+                Corner(bounds.X + inset, bounds.Bottom - inset - os,
+                       SpriteEffects.FlipVertically);
+                Corner(bounds.Right - inset - os, bounds.Bottom - inset - os,
+                       SpriteEffects.FlipHorizontally
+                       | SpriteEffects.FlipVertically);
+            }
             string title = _entry.DisplayTitle ?? "";
             float titleSize = Math.Max(20f, _fontSize * 1.7f);
             var titleLines = _tr.WrapText(title, titleSize,
@@ -296,7 +372,9 @@ namespace Frtal.LorebookReader {
             float th = _tr.LineHeight(titleSize, bold: true, serif: true);
 
             float blockH = titleLines.Count * th + 34
-                           + (HasExpansion() ? (_xpIcon != null ? 160 : 92) : 0);
+                           + (HasExpansion()
+                                  ? (_xpIcon != null ? 160 : 92)
+                                  : (_seal != null ? 130 : 0));
             float y = bounds.Y + Math.Max(PadY + 6,
                 (bounds.Height - blockH) * 0.34f);
 
@@ -319,10 +397,20 @@ namespace Frtal.LorebookReader {
             DrawRule(sb, bounds, page, f, anchorLeft, (int)y, 0.30f, 1);
             y += 26;
 
-            // razítko datadisku (jen když je datadisk vyplněný)
-            if (HasExpansion())
+            // razítko datadisku; bez datadisku dostane obálka voskovou pečeť
+            if (HasExpansion()) {
                 PaintStamp(sb, bounds, page, f, anchorLeft,
                     (int)y + (_xpIcon != null ? 62 : 26));
+            } else if (_seal != null) {
+                int ss = Math.Min((int)(fullW * 0.28f), 104);
+                int cx = SqueezeX(bounds, page, f, anchorLeft,
+                                  bounds.X + fullW / 2f);
+                sb.DrawOnCtrl(this, _seal,
+                    new Rectangle(cx, (int)y + 56, (int)(ss * f), ss),
+                    null, Color.White * 0.95f, -0.08f,
+                    new Vector2(_seal.Width / 2f, _seal.Height / 2f),
+                    SpriteEffects.None);
+            }
 
             // dole datum + místo
             string meta = _entry.TimestampLocal == DateTime.MinValue

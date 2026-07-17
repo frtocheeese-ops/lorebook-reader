@@ -36,7 +36,8 @@
     <None Update="manifest.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="ref\**\*">
+    <!-- ref\Backup je pracovní záloha starých ikon — do .bhm nepatří -->
+    <None Include="ref\**\*" Exclude="ref\Backup\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>ref\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </None>

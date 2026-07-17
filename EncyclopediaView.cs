@@ -239,6 +239,12 @@ namespace Frtal.LorebookReader {
                     Font = GameService.Content.DefaultFont14
                 };
             }
+            row.MouseEntered += (s, e) => {
+                if (!active) row.BackgroundColor = new Color(50, 56, 68);
+            };
+            row.MouseLeft += (s, e) => {
+                if (!active) row.BackgroundColor = Color.Transparent;
+            };
             row.Click += (s, e) => {
                 _filterXp = value;
                 FillRail();
@@ -305,11 +311,31 @@ namespace Frtal.LorebookReader {
                 BackgroundColor = (_selected != null && _selected.Id == entry.Id)
                     ? new Color(60, 70, 90) : Color.Transparent
             };
+            bool isSelected = _selected != null && _selected.Id == entry.Id;
+            row.MouseEntered += (s, e) => {
+                if (!isSelected) row.BackgroundColor = new Color(48, 54, 66);
+            };
+            row.MouseLeft += (s, e) => {
+                if (!isSelected) row.BackgroundColor = Color.Transparent;
+            };
+
             var (cr, cg, cb) = Palette.Resolve(entry.ColorTag);
             new Panel {
                 Parent = row, Location = new Point(0, 0),
                 Width = 5, Height = 46, BackgroundColor = new Color(cr, cg, cb)
             };
+            if (!entry.Opened) {
+                // „unread glow": zlatě pulzující hřbet, dokud knihu neotevřeš
+                var glow = new Panel {
+                    Parent = row, Location = new Point(0, 0),
+                    Width = 5, Height = 46,
+                    BackgroundColor = new Color(233, 201, 106)
+                };
+                var tween = GameService.Animation.Tweener
+                    .Tween(glow, new { Opacity = 0.25f }, 0.9f)
+                    .Repeat().Reflect();
+                glow.Disposed += (s, e) => tween.Cancel();
+            }
             int titleX = 12;
             var xpIcon = _module.GetExpansionIcon(entry.Expansion);
             if (xpIcon != null) {
@@ -471,13 +497,21 @@ namespace Frtal.LorebookReader {
 
             // knižní čtečka: obálka s titulem a razítkem datadisku,
             // jedna stránka, listování s animací (redesign fáze B)
-            var reader = new BookReaderPanel(_textRenderer, _parchment) {
+            var reader = new BookReaderPanel(_textRenderer, _parchment,
+                _module.GetRefTexture("arrow_left.png"),
+                _module.GetRefTexture("arrow_right.png"),
+                _module.GetRefTexture("ornament_corner.png"),
+                _module.GetRefTexture("seal.png")) {
                 Parent = _detailPanel, Location = new Point(12, 106),
                 Width = w - 24, Height = h - 118,
                 FontSize = _textFontSize
             };
             reader.SetEntry(entry, body,
                 _module.GetExpansionStampIcon(entry.Expansion));
+            // jemný fade-in místo skokového překreslení
+            reader.Opacity = 0f;
+            GameService.Animation.Tweener.Tween(
+                reader, new { Opacity = 1f }, 0.2f);
 
             fontMinus.Click += (s, e) => {
                 _textFontSize = Math.Max(12f, _textFontSize - 2f);

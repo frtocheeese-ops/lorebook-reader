@@ -127,14 +127,13 @@ Second pass after phases A + B shipped. Sources: parchment/book UI kits,
 Skyrim book-UI mod ecosystem, game-juice writeups (links below). Ideas ranked
 by cost; none block publishing 0.7.0.
 
-### Code-only quick wins (no new art)
+### Code-only quick wins (no new art) — SHIPPED in 0.7.1
 1. **Easing on the page turn.** Juice guides: UI eases OUT, never linear.
    Our squeeze is linear; use quadratic ease-in for the closing half and
    ease-out for the opening half (2-line change in the `_turnT` mapping).
-2. **Drop cap (iniciála).** Illuminated-manuscript signature: render the
-   first letter of the first paragraph of each book ~3 lines tall, serif,
-   dark ink; body wraps beside it. TextRenderer can do it today (serif+bold,
-   big size, custom first-page layout).
+2. **Drop cap (iniciála).** ~~Illuminated-manuscript initial letter.~~
+   TRIED in 0.7.1 and REJECTED by the author (2026-07-16) — did not fit the
+   look. Do not re-propose.
 3. **Aged page edges.** Procedural vignette: 2–3 nested 1px strips + soft
    alpha band around the parchment rect (FaintInk * 0.15…0.05). Instantly
    less "flat texture".

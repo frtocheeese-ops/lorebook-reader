@@ -1055,6 +1055,10 @@ namespace Frtal.LorebookReader {
         internal Texture2D GetExpansionIcon(string expansion) =>
             LoadRefTexture(ExpansionIconFile(expansion));
 
+        /// <summary>Volitelná textura z ref/ (šipky, ornament, pečeť…);
+        /// chybějící soubor = null, volající si poradí.</summary>
+        internal Texture2D GetRefTexture(string file) => LoadRefTexture(file);
+
         /// <summary>Velké logo pro razítko na obálce: preferuje
         /// ref/xp_*_big.png (~256 px), jinak padne na malou ikonu.</summary>
         internal Texture2D GetExpansionStampIcon(string expansion) {

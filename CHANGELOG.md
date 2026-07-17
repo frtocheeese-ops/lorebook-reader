@@ -3,6 +3,37 @@
 All notable changes to Lorebook Reader are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## 0.7.2 — 2026-07-17
+
+Hand-painted asset pack — the whole module now wears one Guild Wars 2 look.
+
+### Changed
+- New hand-painted icons for the in-world buttons (read aloud, save, append)
+  with proper hover variants, and a monochrome open-book icon for the corner
+  toolbar that blends in with the game's own icons.
+- The reader's page-turn buttons are now carved stone-and-gold discs with a
+  hover glow (replacing the plain ‹ › buttons).
+- New aged parchment texture with worn deckled edges as the book background.
+- Book covers gained gold corner flourishes, and books without an expansion
+  now carry a red wax seal on the cover (expansion books keep their logo
+  stamp).
+
+### Fixed
+- The old backup icons folder is no longer packed into the module file.
+
+## 0.7.1 — 2026-07-16
+
+Visual polish round for the encyclopedia (no new features to learn).
+
+### Changed
+- The page-turn animation now eases (accelerates closing, decelerates
+  opening) instead of moving linearly.
+- Page edges carry a subtle aged patina instead of ending flat.
+- Expansion rail rows and book list rows highlight on mouse-over.
+- Unopened books glow: the spine strip pulses gold until you open them
+  (the NEW tag stays too).
+- The reader fades in softly when you open a book.
+
 ## 0.7.0 — 2026-07-16
 
 The encyclopedia visual remake. (Includes the unreleased 0.6.0 work.)
