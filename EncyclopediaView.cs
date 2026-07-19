@@ -37,6 +37,14 @@ namespace Frtal.LorebookReader {
         private Panel _detailPanel;
         private LorebookEntry _selected;
         private float _textFontSize = 18f;
+        private bool _readerFullscreen; // kniha přes celé okno (bez railu/seznamu)
+
+        // debounce ukládání editoru: text se do disku nezapisuje při každém
+        // stisku klávesy (to zamrzávalo Blish), ale ~1,2 s po poslední změně
+        // a při odchodu z editoru. entry.Text se mění in-place, takže flush
+        // jen persistuje aktuální stav katalogu.
+        private System.Threading.Timer _editFlushTimer;
+        private volatile bool _editDirty;
         private enum DetailMode { Empty, Preview, Edit }
         private DetailMode _mode = DetailMode.Empty;
 
@@ -61,11 +69,27 @@ namespace Frtal.LorebookReader {
         }
 
         private void BuildLayout() {
+            FlushEdits(); // rebuild (např. resize okna) → dozapiš rozeditované
             _root.ClearChildren();
             // ContentRegion = vnitřní plocha okna bez titulku a okrajů.
             // Použití .Width/.Height by zahrnulo rámeček a obsah by přetékal.
             int totalW = _root.ContentRegion.Width;
             int totalH = _root.ContentRegion.Height;
+
+            // fullscreen čtení: jen kniha přes celé okno + A± (výstup
+            // stejnou rohovou značkou na knize)
+            if (_readerFullscreen && _selected != null) {
+                BuildFullscreenReader(totalW, totalH);
+                return;
+            }
+            _readerFullscreen = false;
+
+            // editace přes celé okno (víc místa než úzký detail panel);
+            // ukončí se tlačítkem Done → návrat na normální layout + náhled
+            if (_mode == DetailMode.Edit && _selected != null) {
+                ShowEditor(_selected, totalW, totalH);
+                return;
+            }
             bool railMini = _module.EncyclopediaRailCollapsedSetting.Value;
             int railW = railMini ? 54 : 236; // expanded: vejde se i „Secrets of the Obscure"
             int listX = 8 + railW + 8;
@@ -132,10 +156,9 @@ namespace Frtal.LorebookReader {
             };
 
             RefreshList();
-            // znovu vykreslit detail podle stavu
-            if (_selected != null && _mode == DetailMode.Edit) ShowEditor(_selected);
-            else if (_selected != null)                        ShowPreview(_selected);
-            else                                               ShowEmpty();
+            // znovu vykreslit detail podle stavu (edit mód řeší větev nahoře)
+            if (_selected != null) ShowPreview(_selected);
+            else                   ShowEmpty();
         }
 
         private static readonly (string Name, string Code)[] RailPresets = {
@@ -264,7 +287,10 @@ namespace Frtal.LorebookReader {
         }
 
         public void RefreshList() {
-            if (_listPanel == null) return;
+            // v edit módu je layout přes celé okno — seznam neexistuje
+            // (jeho reference je navíc už disposnutá). Změny se promítnou
+            // při návratu, kdy BuildLayout seznam postaví znovu.
+            if (_listPanel == null || _mode == DetailMode.Edit) return;
             _listPanel.ClearChildren();
             var results = _catalog.Query(
                 _searchBox?.Text, CurrentSort(),
@@ -294,6 +320,7 @@ namespace Frtal.LorebookReader {
         /// další stránky, importu apod.). V editačním režimu detail nechá být,
         /// ať nepřepíše rozeditovaný text uživatele.</summary>
         public void RefreshFromCatalog() {
+            if (_readerFullscreen) return; // rail/seznam teď neexistují
             FillRail();
             RefreshList();
             if (_mode == DetailMode.Edit || _selected == null) return;
@@ -404,6 +431,7 @@ namespace Frtal.LorebookReader {
         }
 
         private void ShowPreview(LorebookEntry entry) {
+            FlushEdits(); // odchod z editoru → dozapiš text
             _mode = DetailMode.Preview;
             // NEW badge zhasíná prvním otevřením (Update vyvolá refresh,
             // fresh záznam už má Opened=true, takže se to nezacyklí)
@@ -444,7 +472,11 @@ namespace Frtal.LorebookReader {
                 Parent = _detailPanel, Location = new Point(172, 44),
                 Width = 80, Text = "Edit"
             };
-            editBtn.Click += (s, e) => ShowEditor(entry);
+            editBtn.Click += (s, e) => {
+                _selected = entry;
+                _mode = DetailMode.Edit;
+                BuildLayout();   // editace se postaví přes celé okno
+            };
             var delBtn = new StandardButton {
                 Parent = _detailPanel, Location = new Point(w - 92, 44),
                 Width = 80, Text = "Delete"
@@ -490,10 +522,7 @@ namespace Frtal.LorebookReader {
                 };
             }
 
-            string body = entry.Text;
-            if (!string.IsNullOrEmpty(entry.TranslatedText))
-                body += "\n\n———  " + (entry.TranslatedLang ?? "translation")
-                    + "  ———\n\n" + entry.TranslatedText;
+            string body = BuildBody(entry);
 
             // knižní čtečka: obálka s titulem a razítkem datadisku,
             // jedna stránka, listování s animací (redesign fáze B)
@@ -501,13 +530,19 @@ namespace Frtal.LorebookReader {
                 _module.GetRefTexture("arrow_left.png"),
                 _module.GetRefTexture("arrow_right.png"),
                 _module.GetRefTexture("ornament_corner.png"),
-                _module.GetRefTexture("seal.png")) {
+                _module.GetRefTexture("seal.png"),
+                _module.GetRefTexture("expand.png"),
+                _module.GetRefTexture("collapse.png")) {
                 Parent = _detailPanel, Location = new Point(12, 106),
                 Width = w - 24, Height = h - 118,
                 FontSize = _textFontSize
             };
             reader.SetEntry(entry, body,
                 _module.GetExpansionStampIcon(entry.Expansion));
+            reader.FullscreenToggled += (s, e) => {
+                _readerFullscreen = true;
+                BuildLayout();
+            };
             // jemný fade-in místo skokového překreslení
             reader.Opacity = 0f;
             GameService.Animation.Tweener.Tween(
@@ -524,22 +559,31 @@ namespace Frtal.LorebookReader {
         }
 
         // ===================== DETAIL: editor =====================
-        private void ShowEditor(LorebookEntry entry) {
+        private void ShowEditor(LorebookEntry entry, int w, int h) {
             _mode = DetailMode.Edit;
-            _detailPanel.ClearChildren();
-            int w = _detailPanel.Width;
-            int h = _detailPanel.Height;
 
-            var back = new StandardButton {
-                Parent = _detailPanel, Location = new Point(12, 10),
-                Width = 90, Text = "‹ Back"
+            // editace vyplní celé okno; ukončí ji „Done" (návrat na náhled)
+            var done = new StandardButton {
+                Parent = _root, Location = new Point(12, 10),
+                Width = 150, Text = "✓ Done editing"
             };
-            back.Click += (s, e) => ShowPreview(entry);
+            done.Click += (s, e) => {
+                FlushEdits();
+                _mode = DetailMode.Preview;
+                BuildLayout();
+            };
+            new Label {
+                Parent = _root, Location = new Point(172, 14),
+                Width = Math.Max(20, w - 184), Height = 24,
+                Text = "Editing: " + entry.DisplayTitle,
+                Font = GameService.Content.DefaultFont18,
+                TextColor = new Color(210, 200, 170)
+            };
 
-            // levá část editoru: metadata
-            int formW = Math.Min(280, w / 2 - 16);
+            // levá část editoru: metadata (širší, je víc místa)
+            int formW = Math.Min(340, w / 3);
             var form = new FlowPanel {
-                Parent = _detailPanel, Location = new Point(12, 46),
+                Parent = _root, Location = new Point(12, 46),
                 Width = formW, Height = h - 58,
                 FlowDirection = ControlFlowDirection.SingleTopToBottom,
                 ControlPadding = new Vector2(0, 5), CanScroll = true
@@ -603,12 +647,16 @@ namespace Frtal.LorebookReader {
                     try {
                         string tr = await TranslationService.TranslateAsync(
                             entry.Text, target);
-                        entry.TranslatedText = tr;
-                        entry.TranslatedLang = target;
-                        Save(entry);
-                        status.Text = "Saved.";
+                        // UI (Save→RefreshList, status) jen na hlavním vlákně —
+                        // z pozadí by to náhodně shazovalo Blish
+                        _module.RunOnMainThread(() => {
+                            entry.TranslatedText = tr;
+                            entry.TranslatedLang = target;
+                            Save(entry);
+                            status.Text = "Saved.";
+                        });
                     } catch (Exception ex) {
-                        status.Text = "Translation failed.";
+                        _module.RunOnMainThread(() => status.Text = "Translation failed.");
                         Logger.GetLogger<EncyclopediaView>().Warn(ex, "Translate failed.");
                     }
                 });
@@ -620,25 +668,41 @@ namespace Frtal.LorebookReader {
             // zase odstraníme — uložená data zůstávají bez měkkých konců řádků.
             int editX = 12 + formW + 12;
             new Label {
-                Parent = _detailPanel, Location = new Point(editX, 46),
+                Parent = _root, Location = new Point(editX, 46),
                 Width = w - editX - 12, Height = 20,
                 Text = "Book text (fix OCR errors, add page 2…)",
                 TextColor = new Color(200, 200, 200)
             };
             int editW = w - editX - 12;
+            int editH = h - 130;
+            // scrollovatelný rám: MultilineTextBox sám scrollbar nemá, takže
+            // ho vložíme do panelu a necháme textbox růst do výšky obsahu.
+            // KRITICKÉ: výška pole musí TĚSNĚ sedět na text. Blishí
+            // MultilineTextBox.GetCursorIndexFromPosition spadne (NRE), když
+            // klikneš pod poslední řádek — a přebytečná výška = velká prázdná
+            // plocha ke kliknutí = pád celého Blish (crash 17.7.2026). Proto
+            // font pole = font měření (18) a výška bez rezervy.
+            var editScroll = new Panel {
+                Parent = _root, Location = new Point(editX, 70),
+                Width = editW, Height = editH, CanScroll = true
+            };
+            int boxW = editW - 18; // místo na scrollbar
+            var editFont = GameService.Content.DefaultFont18;
+            string wrapped = WrapForEdit(entry.Text, boxW);
             var textEdit = new MultilineTextBox {
-                Parent = _detailPanel,
-                Location = new Point(editX, 70),
-                Width = editW, Height = h - 130,
-                Text = WrapForEdit(entry.Text, editW)
+                Parent = editScroll, Location = new Point(0, 0),
+                Width = boxW, Font = editFont,
+                Height = EditContentHeight(wrapped),
+                Text = wrapped
             };
             textEdit.TextChanged += (s, e) => {
-                entry.Text = UnwrapFromEdit(textEdit.Text);
-                Save(entry);
+                entry.Text = UnwrapFromEdit(textEdit.Text);   // in-place, levné
+                textEdit.Height = EditContentHeight(textEdit.Text);
+                ScheduleEditFlush();                          // disk až po pauze
             };
 
             new Label {
-                Parent = _detailPanel, Location = new Point(editX, h - 56),
+                Parent = _root, Location = new Point(editX, h - 56),
                 Width = w - editX - 12, Height = 40,
                 Text = "Tip: editor uses a basic font without accents, but the "
                      + "preview shows full diacritics.",
@@ -649,6 +713,88 @@ namespace Frtal.LorebookReader {
         private void Save(LorebookEntry entry) {
             _catalog.Update(entry);
             RefreshList();
+        }
+
+        /// <summary>Naplánuje zápis editovaného textu na disk (~1,2 s po
+        /// poslední změně). Časovač běží na pozadí; Flush() je zamčený.</summary>
+        private void ScheduleEditFlush() {
+            _editDirty = true;
+            _editFlushTimer?.Dispose();
+            _editFlushTimer = new System.Threading.Timer(_ => {
+                if (_editDirty) { _editDirty = false; _catalog.Flush(); }
+            }, null, 1200, System.Threading.Timeout.Infinite);
+        }
+
+        /// <summary>Okamžitě dozapíše rozeditovaný text (odchod z editoru,
+        /// zavření okna, unload). Voláno i z modulu.</summary>
+        public void FlushEdits() {
+            _editFlushTimer?.Dispose();
+            _editFlushTimer = null;
+            if (_editDirty) { _editDirty = false; _catalog.Flush(); }
+        }
+
+        /// <summary>Těsná výška obsahu editoru podle počtu řádků. ŽÁDNÁ
+        /// rezerva navíc — pole musí končit hned pod textem, jinak klik do
+        /// prázdna pod textem shodí Blishí MultilineTextBox (NRE). Krátký
+        /// text = krátké pole; prázdno pod ním je už panel (bezpečné).</summary>
+        private static int EditContentHeight(string wrapped) {
+            int lines = 1;
+            if (wrapped != null)
+                foreach (char ch in wrapped) if (ch == '\n') lines++;
+            float lh = GameService.Content.DefaultFont18.LineHeight;
+            return (int)(lines * lh) + 8;
+        }
+
+        /// <summary>Text knihy pro čtečku (včetně případného překladu).</summary>
+        private static string BuildBody(LorebookEntry entry) {
+            string body = entry.Text;
+            if (!string.IsNullOrEmpty(entry.TranslatedText))
+                body += "\n\n———  " + (entry.TranslatedLang ?? "translation")
+                    + "  ———\n\n" + entry.TranslatedText;
+            return body;
+        }
+
+        /// <summary>Kniha přes celé okno — čtecí režim. Zpět rohovou
+        /// značkou na knize; A± zůstávají po ruce.</summary>
+        private void BuildFullscreenReader(int totalW, int totalH) {
+            var reader = new BookReaderPanel(_textRenderer, _parchment,
+                _module.GetRefTexture("arrow_left.png"),
+                _module.GetRefTexture("arrow_right.png"),
+                _module.GetRefTexture("ornament_corner.png"),
+                _module.GetRefTexture("seal.png"),
+                _module.GetRefTexture("expand.png"),
+                _module.GetRefTexture("collapse.png")) {
+                Parent = _root, Location = new Point(8, 6),
+                Width = totalW - 16, Height = totalH - 14,
+                FontSize = _textFontSize
+            };
+            reader.SetEntry(_selected, BuildBody(_selected),
+                _module.GetExpansionStampIcon(_selected.Expansion));
+            reader.IsFullscreen = true;
+            reader.FullscreenToggled += (s, e) => {
+                _readerFullscreen = false;
+                BuildLayout();
+            };
+            reader.Opacity = 0f;
+            GameService.Animation.Tweener.Tween(
+                reader, new { Opacity = 1f }, 0.2f);
+
+            var fontMinus = new StandardButton {
+                Parent = _root, Location = new Point(16, 12),
+                Width = 36, Text = "A−"
+            };
+            var fontPlus = new StandardButton {
+                Parent = _root, Location = new Point(56, 12),
+                Width = 36, Text = "A+"
+            };
+            fontMinus.Click += (s, e) => {
+                _textFontSize = Math.Max(12f, _textFontSize - 2f);
+                reader.FontSize = _textFontSize;
+            };
+            fontPlus.Click += (s, e) => {
+                _textFontSize = Math.Min(40f, _textFontSize + 2f);
+                reader.FontSize = _textFontSize;
+            };
         }
 
         /// <summary>Předvolby datadisků (pořadí vydání). První položka =

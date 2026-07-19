@@ -29,7 +29,12 @@ namespace Frtal.LorebookReader {
         private static readonly Color FaintInk      = new Color(122, 104, 70);
         private static readonly Color StampInk      = new Color(126, 54, 34) * 0.85f;
         private const int PadX = 46; // volný pruh pro ‹ › tlačítka po stranách
-        private const int PadY = 20;
+        private const int PadY = 20; // spodní okraj
+        // horní okraj textu: nechává místo pro tlačítko fullscreenu, které
+        // sedí uprostřed horní hrany knihy (jinak by leželo na textu)
+        private const int FsBtnSize = 46;
+        private const int FsBtnTop  = 8;
+        private const int PadTop = FsBtnTop + FsBtnSize + 10;
         private const double TurnMs = 420;
 
         private readonly TextRenderer _tr;
@@ -59,12 +64,33 @@ namespace Frtal.LorebookReader {
 
         private readonly Control _prevBtn;
         private readonly Control _nextBtn;
+        private readonly FullscreenButton _fsBtn;
+
+        /// <summary>Klik na rohovou značku knihy (fullscreen ⇄ zpět).
+        /// Přepnutí layoutu dělá vlastník (EncyclopediaView).</summary>
+        public event EventHandler FullscreenToggled;
+
+        private bool _isFullscreen;
+        public bool IsFullscreen {
+            get => _isFullscreen;
+            set {
+                _isFullscreen = value;
+                if (_fsBtn != null) {
+                    _fsBtn.Collapse = value;
+                    _fsBtn.BasicTooltipText = value
+                        ? "Exit full-window reading"
+                        : "Read across the whole window";
+                }
+            }
+        }
 
         public BookReaderPanel(TextRenderer tr, Texture2D parchment,
                                Texture2D arrowLeft = null,
                                Texture2D arrowRight = null,
                                Texture2D ornament = null,
-                               Texture2D seal = null) {
+                               Texture2D seal = null,
+                               Texture2D expandIcon = null,
+                               Texture2D collapseIcon = null) {
             _tr = tr;
             _parchment = parchment;
             _ornament = ornament;
@@ -73,6 +99,73 @@ namespace Frtal.LorebookReader {
             _nextBtn = MakeArrow(arrowRight, "›");
             _prevBtn.Click += (s, e) => Turn(-1);
             _nextBtn.Click += (s, e) => Turn(+1);
+            // vlastní ikony z ref/ (expand.png / collapse.png); bez nich
+            // se kreslí zabudované značky
+            _fsBtn = new FullscreenButton {
+                Parent = this, Visible = false,
+                Size = new Point(FsBtnSize, FsBtnSize),
+                ExpandIcon = expandIcon, CollapseIcon = collapseIcon,
+                BasicTooltipText = "Read across the whole window"
+            };
+            _fsBtn.Click += (s, e) =>
+                FullscreenToggled?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>Rohová značka fullscreenu — kreslená čistě z pixelů
+        /// (závorky „roztáhnout" / čtvereček „obnovit"), žádný font/asset.</summary>
+        private sealed class FullscreenButton : Control {
+            public bool Collapse;
+            public Texture2D ExpandIcon, CollapseIcon;
+            private bool _hover;
+            protected override CaptureType CapturesInput() => CaptureType.Mouse;
+            protected override void OnMouseEntered(MouseEventArgs e) {
+                _hover = true; base.OnMouseEntered(e);
+            }
+            protected override void OnMouseLeft(MouseEventArgs e) {
+                _hover = false; base.OnMouseLeft(e);
+            }
+            protected override void Paint(SpriteBatch sb, Rectangle b) {
+                // vlastní ikona z ref/ má přednost (hover = plný jas)
+                var icon = Collapse ? CollapseIcon : ExpandIcon;
+                if (icon != null) {
+                    sb.DrawOnCtrl(this, icon, b, null,
+                        _hover ? Color.White : Color.White * 0.85f);
+                    return;
+                }
+
+                var px = ContentService.Textures.Pixel;
+                // tmavé průsvitné pozadí + světlé linky → čitelné na
+                // pergamenu i na tmavém okně (feedback 17.7.2026)
+                sb.DrawOnCtrl(this, px, b,
+                    new Color(0, 0, 0, _hover ? 165 : 120));
+                var edge = new Color(150, 122, 60) * (_hover ? 1f : 0.85f);
+                sb.DrawOnCtrl(this, px, new Rectangle(b.X, b.Y, b.Width, 1), edge);
+                sb.DrawOnCtrl(this, px, new Rectangle(b.X, b.Bottom - 1, b.Width, 1), edge);
+                sb.DrawOnCtrl(this, px, new Rectangle(b.X, b.Y, 1, b.Height), edge);
+                sb.DrawOnCtrl(this, px, new Rectangle(b.Right - 1, b.Y, 1, b.Height), edge);
+                var c = new Color(245, 233, 202) * (_hover ? 1f : 0.9f);
+                const int t = 2, a = 9, m = 6; // m = odsazení od okraje rámečku
+                if (!Collapse) {
+                    // rohové závorky ven = „roztáhnout"
+                    int L = b.X + m, R = b.Right - m, T = b.Y + m, B2 = b.Bottom - m;
+                    sb.DrawOnCtrl(this, px, new Rectangle(L, T, a, t), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(L, T, t, a), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(R - a, T, a, t), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(R - t, T, t, a), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(L, B2 - t, a, t), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(L, B2 - a, t, a), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(R - a, B2 - t, a, t), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(R - t, B2 - a, t, a), c);
+                } else {
+                    // čtvereček uprostřed = „obnovit okno"
+                    int s2 = 14;
+                    int x = b.X + (b.Width - s2) / 2, y = b.Y + (b.Height - s2) / 2;
+                    sb.DrawOnCtrl(this, px, new Rectangle(x, y, s2, t), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(x, y + s2 - t, s2, t), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(x, y, t, s2), c);
+                    sb.DrawOnCtrl(this, px, new Rectangle(x + s2 - t, y, t, s2), c);
+                }
+            }
         }
 
         /// <summary>Kamenný disk z ref/ (hover = plný jas); bez textury
@@ -140,13 +233,14 @@ namespace Frtal.LorebookReader {
             _pages.Clear();
             int w = this.Width, h = this.Height;
             _lastLayoutW = w; _lastLayoutH = h;
-            if (_entry == null || w <= PadX * 2 + 20 || h <= PadY * 2 + 20) return;
+            if (_entry == null || w <= PadX * 2 + 20
+                || h <= PadTop + PadY + 20) return;
 
             int wrapW = w - PadX * 2;
             float lineH = _tr.LineHeight(_fontSize);
             float headH = _tr.LineHeight(_fontSize + 2, bold: true);
             float gapH  = lineH * 0.55f;
-            float availH = h - PadY * 2 - 18; // rezerva na číslo stránky
+            float availH = h - PadTop - PadY - 18; // rezerva na číslo stránky
 
             var cur = new List<Line>();
             float used = 0;
@@ -221,12 +315,17 @@ namespace Frtal.LorebookReader {
 
         private void UpdateButtons() {
             // ctor: Parent= prvního tlačítka spustí RecalculateLayout dřív,
-            // než existuje druhé (crash 2026-07-16, NRE v UpdateButtons)
-            if (_prevBtn == null || _nextBtn == null) return;
+            // než existují ostatní (crash 2026-07-16, NRE v UpdateButtons)
+            if (_prevBtn == null || _nextBtn == null || _fsBtn == null) return;
             _prevBtn.Visible = _entry != null && _page > 0;
             _nextBtn.Visible = _entry != null && _page < _pages.Count;
-            _prevBtn.Location = new Point(4, this.Height / 2 - 13);
-            _nextBtn.Location = new Point(this.Width - 34, this.Height / 2 - 13);
+            _fsBtn.Visible   = _entry != null;
+            _prevBtn.Location = new Point(4, this.Height / 2 - _prevBtn.Height / 2);
+            _nextBtn.Location = new Point(this.Width - _nextBtn.Width - 4,
+                                          this.Height / 2 - _nextBtn.Height / 2);
+            // uprostřed horní hrany knihy (text začíná až pod ním, viz PadTop)
+            _fsBtn.Location = new Point(
+                (this.Width - _fsBtn.Width) / 2, FsBtnTop);
         }
 
         public override void RecalculateLayout() {
@@ -320,7 +419,7 @@ namespace Frtal.LorebookReader {
         private void PaintPage(SpriteBatch sb, Rectangle bounds,
                                Rectangle page, float f, bool anchorLeft) {
             var lines = _pages[_page - 1];
-            float y = bounds.Y + PadY;
+            float y = bounds.Y + PadTop;
             foreach (var ln in lines) {
                 float lh = ln.Head
                     ? _tr.LineHeight(_fontSize + 2, bold: true)
@@ -375,7 +474,7 @@ namespace Frtal.LorebookReader {
                            + (HasExpansion()
                                   ? (_xpIcon != null ? 160 : 92)
                                   : (_seal != null ? 130 : 0));
-            float y = bounds.Y + Math.Max(PadY + 6,
+            float y = bounds.Y + Math.Max(PadTop + 6,
                 (bounds.Height - blockH) * 0.34f);
 
             foreach (string ln in titleLines) {

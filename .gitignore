@@ -11,3 +11,6 @@ Properties/launchSettings.json
 # Assistant / dev tooling — not needed by users or the SSRD build
 .claude/
 CLAUDE.md
+
+# Working backup of the old icon set — not shipped, not needed in the repo
+ref/Backup/

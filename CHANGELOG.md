@@ -1,38 +1,65 @@
 # Changelog
 
-All notable changes to Lorebook Reader are documented here.
+All notable changes to Lorebook Codex and TTS are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
-## 0.7.2 — 2026-07-17
+## 0.8.0 — 2026-07-18
 
-Hand-painted asset pack — the whole module now wears one Guild Wars 2 look.
+The module is now **Lorebook Codex and TTS**. This release turns the
+encyclopedia into a proper in-game codex: hand-painted artwork throughout,
+full-window reading and editing, and a round of stability fixes for people who
+catalogue a lot of books by hand.
+
+### Added
+- **Full-window reading.** A button at the top of the book expands it across
+  the whole window for comfortable reading. The rail and list step aside and
+  only the book, its page-turn buttons and the font size controls remain. The
+  same button brings the normal layout back.
+- **Full-window editing.** Pressing Edit now expands the editor across the
+  entire frame, with the metadata fields on the left and a large text box on
+  the right. Press "Done editing" to return to browsing.
 
 ### Changed
-- New hand-painted icons for the in-world buttons (read aloud, save, append)
-  with proper hover variants, and a monochrome open-book icon for the corner
-  toolbar that blends in with the game's own icons.
-- The reader's page-turn buttons are now carved stone-and-gold discs with a
-  hover glow (replacing the plain ‹ › buttons).
-- New aged parchment texture with worn deckled edges as the book background.
-- Book covers gained gold corner flourishes, and books without an expansion
-  now carry a red wax seal on the cover (expansion books keep their logo
+- **Renamed to "Lorebook Codex and TTS".** Only the display name changed. Your
+  saved books and settings are untouched.
+- **Hand-painted artwork throughout.** New icons for the in-world buttons
+  (read aloud, save, append) with hover variants, a monochrome open-book icon
+  that blends into the corner toolbar, carved stone and gold page-turn discs,
+  matching buttons for the full-window toggle, a new aged parchment page with
+  worn edges, gold corner flourishes on covers, and an optional book-themed
+  frame for the window itself.
+- **Wax seal on plain covers.** Books without an expansion now carry a red wax
+  seal, so every cover has a mark (books with an expansion keep their logo
   stamp).
+- **Bigger window and a larger editor font.** The codex opens larger, is still
+  freely resizable, and the edit box uses a bigger, more readable font. The
+  window resets to the new default size once.
+- **Reading polish.** The page turn now eases in and out instead of moving
+  linearly, pages carry a subtle aged patina at their edges, rail and list rows
+  highlight on mouse-over, unopened books pulse gold on their spine, and the
+  reader fades in softly when a book opens.
+- The full-window toggle and its restore button are clearly visible on both the
+  parchment and the dark window.
+- README refreshed for the new interface, including both calibrations
+  (Ctrl+Alt+Z for dialogues, Ctrl+Alt+B for lorebooks).
 
 ### Fixed
+- **Editing no longer freezes Blish HUD.** The editor used to write the whole
+  catalogue to disk on every keystroke. Edits are now saved shortly after you
+  stop typing, when you leave the editor, and when you close the window, which
+  removes the lock-ups people hit during long manual edits.
+- **Clicking in the editor no longer crashes Blish HUD.** Clicking below the
+  last line of the text box could take the whole overlay down. The box is now
+  sized tightly to its text so that click target no longer exists.
+- **The text editor scrolls.** Long books used to run off the bottom with no
+  way to reach the text below.
+- **Bullet points and vertical lists survive capture.** Bulleted and numbered
+  lists, and table-like blocks such as name registries, stay on their own lines
+  instead of being merged into one run-on paragraph.
+- **Translating a saved book no longer risks a crash.** The result was updating
+  the interface from a background thread; it now hands the update back to the
+  main thread.
 - The old backup icons folder is no longer packed into the module file.
-
-## 0.7.1 — 2026-07-16
-
-Visual polish round for the encyclopedia (no new features to learn).
-
-### Changed
-- The page-turn animation now eases (accelerates closing, decelerates
-  opening) instead of moving linearly.
-- Page edges carry a subtle aged patina instead of ending flat.
-- Expansion rail rows and book list rows highlight on mouse-over.
-- Unopened books glow: the spine strip pulses gold until you open them
-  (the NEW tag stays too).
-- The reader fades in softly when you open a book.
 
 ## 0.7.0 — 2026-07-16
 

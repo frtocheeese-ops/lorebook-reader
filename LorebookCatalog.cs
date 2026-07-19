@@ -362,6 +362,11 @@ namespace Frtal.LorebookReader {
                 + Path.GetFileName(quarantine) + ".";
         }
 
+        /// <summary>Vynutí zápis na disk (pro debouncované ukládání z
+        /// editoru — entry se mění in-place, tohle jen persistuje).
+        /// Vláknově bezpečné, smí se volat z časovače na pozadí.</summary>
+        public void Flush() { lock (_lock) Save(); }
+
         private void Save() {
             if (_saveBlocked) return; // chráníme neodklizený poškozený soubor
             try {

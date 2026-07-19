@@ -1,30 +1,54 @@
-# Lorebook Reader
+# Lorebook Codex and TTS
 
-A [Blish HUD](https://blishhud.com) module for **Guild Wars 2** that reads
-open lorebooks aloud and keeps a searchable encyclopedia of everything
-you've read — so you can keep playing while you listen to the story.
+A [Blish HUD](https://blishhud.com) module for **Guild Wars 2** that keeps a
+searchable, book-styled codex of every lorebook and NPC story dialogue you
+read, and can read them aloud so you can keep playing while you listen to the
+story.
+
+*(Formerly "Lorebook Reader".)*
 
 ## What It Looks Like
 
-### Open a lorebook → three action buttons appear
-<img width="505" height="640" alt="image" src="https://github.com/user-attachments/assets/48e3e5bf-afb4-4df6-8164-3a8dd4570be6" />
+> **The images below are placeholders.** To add a screenshot: open this file
+> with the GitHub pencil (Edit) button, click on the placeholder line, and drag
+> your image onto it — GitHub uploads it and inserts the link automatically.
+> Then delete the italic placeholder note above it.
 
+### Open a lorebook → three action buttons appear
+<!-- SCREENSHOT 1 — drag image here: an open lorebook in-game with the three hand-painted icons (speaker / save / append) beside it -->
+_📸 Placeholder 1: in-world lorebook with the three action buttons._
 
 Click **🔊** to read aloud + save, **➕** to save only, or **⬇️** to
 append this page to the last saved book.
 
 ### Subtitles while playing
-<img width="685" height="391" alt="image (1)" src="https://github.com/user-attachments/assets/dcab43ed-8268-406b-b51f-687eadd329db" />
-
+<!-- SCREENSHOT 2 — drag image here: subtitles shown over gameplay while a book is being read aloud -->
+_📸 Placeholder 2: subtitles while reading._
 
 Optional on-screen captions with full diacritics, adjustable size and
 position.
 
-### Encyclopedia — your personal lorebook collection
-<img width="685" height="520" alt="image (2)" src="https://github.com/user-attachments/assets/1530cf62-998f-4283-8124-58a381e22408" />
+### The codex — expansion rail + book reader
+<!-- SCREENSHOT 3 — drag image here: the codex window with the expansion rail (icons + counts) on the left, the book list in the middle, and a book open on its cover page (ideally one with an expansion stamp) -->
+_📸 Placeholder 3: codex window — expansion rail, book list, and a book open on its illustrated cover._
 
+Browse your collection by expansion, then read each book on a parchment page
+with a cover, an expansion stamp (or a red wax seal), page-turn buttons, and a
+gold **NEW** badge on books you have not opened yet.
 
-Search, sort, tag, edit, translate, and replay any book you've saved.
+### Full-window reading
+<!-- SCREENSHOT 4 — drag image here: a book expanded across the whole window using the corner bracket toggle -->
+_📸 Placeholder 4: full-window reading mode._
+
+Click the bracket mark in a book's corner to expand it across the whole window
+for comfortable reading; click again to return.
+
+### Full-window editing
+<!-- SCREENSHOT 5 — drag image here: the editor filling the whole window (metadata fields on the left, large text box on the right, "Done editing" button at the top) -->
+_📸 Placeholder 5: full-window editor._
+
+Press **Edit** to fix OCR text or add metadata across the entire frame, then
+**Done editing** to return to browsing.
 
 ## Features
 
@@ -60,20 +84,32 @@ Optional on-screen subtitles displayed while reading:
 - Shadow rendering for readability over any background
 
 ### 📚 Encyclopedia
-Every book you read or save is stored in a searchable, sortable catalog:
+Every book you read or save lands in a catalog styled like an in-game
+grimoire:
+- **Expansion rail** — browse your collection by expansion in a left-hand
+  rail with expansion icons and book counts; it collapses to icons only so
+  the window stays compact on low resolutions
+- **Book reader** — each entry opens as a real book: a cover page with the
+  title in a book font, the capture date and location, the expansion logo
+  pressed on as a stamp (books without an expansion get a red wax seal),
+  gold corner flourishes, and aged parchment pages you turn one by one with
+  carved stone buttons and a page-turn animation
+- **NEW badge** — freshly captured books pulse gold in the list until you
+  open them
 - **Search** across titles, text, and all metadata
 - **Sort** by newest, oldest, title A–Z / Z–A, or color tag
 - **Color tags** — tag books with colors (Red, Orange, Yellow, Green,
   Blue, Purple, Teal) for visual organization
-- **Metadata** — record expansion, theme, location where you found it,
-  and free-form notes
+- **Metadata** — pick the expansion from a preset list (with icons) and
+  record theme, location and free-form notes
 - **Edit text** — fix OCR errors or typos directly in the encyclopedia
 - **Translate** — translate any saved book into 11 languages and store
   the translation alongside the original
-- **Preview** — read books on a parchment-style panel with adjustable
-  font size (A+ / A−)
-- **Replay** — play any saved book through TTS at any time
+- **Replay** — play any saved book through TTS at any time; adjustable
+  reading font size (A+ / A−)
 - **Export / Import** — share your collection with friends as a JSON file
+- **No limits** — the catalog grows with your collection, and deleting a
+  book asks for confirmation first
 
 Access the encyclopedia by clicking the **book icon** in the top-left
 Blish HUD icon bar.
@@ -113,7 +149,7 @@ If unavailable, the module falls back to the original text.
 
 1. Install [Blish HUD](https://blishhud.com) if you haven't already.
 2. In Blish HUD, open the menu → **Manage Modules**.
-3. Search for **Lorebook Reader** → install and enable.
+3. Search for **Lorebook Codex and TTS** → install and enable.
 
 ## Usage
 
@@ -151,16 +187,20 @@ across the game's lighting conditions.
 
 ### Using the Encyclopedia
 1. Click the **book icon** in the top-left Blish HUD icon bar.
-2. Browse, search, or filter your saved lorebooks.
-3. Click any book to preview it on parchment.
-4. Use **▶ Play** to hear it again, **Edit** to fix text or add metadata.
+2. Pick an expansion in the left rail (or **All books**), then search or
+   sort. The « button collapses the rail to icons only.
+3. Click any book — it opens on its cover; turn the pages with the ‹ ›
+   stone buttons.
+4. Use **▶ Play** to hear it again, **Edit** to fix text or add metadata
+   (including the expansion preset that puts the logo stamp on the cover).
 5. **Export** your collection to share, **Import** to merge a friend's.
 
 ## Settings
 
-All settings are accessible in Blish HUD → Manage Modules → Lorebook
-Reader → Settings (gear icon).
-<img width="685" height="509" alt="image (3)" src="https://github.com/user-attachments/assets/1caa3385-3349-4070-952c-eeedd52da163" />
+All settings are accessible in Blish HUD → Manage Modules → **Lorebook Codex
+and TTS** → Settings (gear icon).
+<!-- SCREENSHOT 6 — drag image here: the module's settings panel -->
+_📸 Placeholder 6: the settings panel._
 
 
 
@@ -171,6 +211,8 @@ Reader → Settings (gear icon).
 | Stop reading | `Ctrl+Alt+S` | Stops current TTS playback |
 | Toggle conversation capture | `Ctrl+Alt+C` | Turn NPC-dialogue detection on/off |
 | Calibrate dialogue zone | `Ctrl+Alt+Z` | Mark where dialogue text appears (once per resolution) |
+| Calibrate lorebook OCR area | `Ctrl+Alt+B` | Mark the book text area if OCR cuts text off (once per resolution) |
+| Save debug capture | `Ctrl+Alt+D` | Save detection snapshots to attach to bug reports |
 
 ### Detection
 | Setting | Default | Description |
@@ -179,6 +221,8 @@ Reader → Settings (gear icon).
 | Conversation capture mode | Off | Also detect NPC dialogue / story-journal windows |
 | Calibrate dialogue zone | — | Draw a frame over the dialogue text for reliable OCR |
 | Clear calibration | — | Forget the saved zone and use automatic detection |
+| Calibrate lorebook OCR area | — | Draw a frame over the book text if lines get cut off |
+| Clear lorebook OCR area | — | Return to automatic book cropping |
 
 ### Voice
 | Setting | Default | Description |
@@ -207,11 +251,6 @@ Reader → Settings (gear icon).
 |---------|---------|-------------|
 | Translation | Off | Off / Subtitles only / Subtitles + speech |
 | Translate to | Czech | Target language for translation |
-
-### Catalog
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Catalog size | 10 | Maximum number of books to keep (5–100) |
 
 ## Privacy & Third-Party Services
 
@@ -244,6 +283,11 @@ However, since the scan is performed in a matter of seconds it shouldn't be very
 For NPC dialogues, calibrating the dialogue zone (Ctrl+Alt+Z) avoids this
 entirely — the buttons then anchor to your marked area instead of relying on
 automatic detection.
+
+If lorebook text gets cut off at unusual resolution / UI-size combinations,
+calibrate the lorebook OCR area once (Ctrl+Alt+B): drag the frame over the
+book text and save. Only the size is stored — the book's position is still
+detected automatically.
 
 ## Requirements
 

@@ -98,13 +98,38 @@ namespace Frtal.LorebookReader {
                 && widths[i] < medWidth * 0.62
                 && i + 1 < n && (tops[i + 1] - tops[i]) <= pitch * 1.5;
 
+            // krátký řádek (nevyplňuje šířku) — stavební prvek detekce seznamů
+            var shortLine = new bool[n];
+            for (int i = 0; i < n; i++)
+                shortLine[i] = medWidth > 0 && widths[i] > 0
+                               && widths[i] < medWidth * 0.80;
+
+            // řádek seznamu: začíná odrážkou/číslem, NEBO je součástí běhu
+            // ≥3 po sobě jdoucích krátkých řádků (vertikální seznam/tabulka —
+            // např. „Town Record" se jmény). Takové řádky se nesmí slít do
+            // odstavce, dostanou vlastní řádek. (feedback 17.7.2026)
+            bool IsListLine(int i) {
+                if (i < 0 || i >= n) return false;
+                string tx = (lines[i].Text ?? "").TrimStart();
+                if (System.Text.RegularExpressions.Regex.IsMatch(
+                        tx, @"^([•·●○◦▪‣*\-–—]|\d{1,3}[.)])\s"))
+                    return true;
+                if (!shortLine[i]) return false;
+                int run = 1;
+                for (int j = i - 1; j >= 0 && shortLine[j]; j--) run++;
+                for (int j = i + 1; j < n && shortLine[j]; j++) run++;
+                return run >= 3;
+            }
+
             var sb = new System.Text.StringBuilder();
             for (int i = 0; i < n; i++) {
                 if (i > 0) {
                     double delta = tops[i] - tops[i - 1];
                     bool brk = (pitch > 0 && delta > pitch * 1.5)
                                || IsHeading(i - 1)   // za nadpisem
-                               || IsHeading(i);      // před nadpisem
+                               || IsHeading(i)       // před nadpisem
+                               || IsListLine(i - 1)  // za položkou seznamu
+                               || IsListLine(i);     // před položkou seznamu
                     sb.Append(brk ? "\n\n" : "\n");
                 }
                 sb.Append(lines[i].Text);

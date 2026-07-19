@@ -81,6 +81,13 @@ namespace Frtal.LorebookReader {
         private CornerIcon _cornerIcon;
         private StandardWindow _historyWindow;
         private volatile bool _catalogDirty;
+
+        // fronta akcí, které musí běžet na hlavním (Update) vlákně — Blish
+        // ovládací prvky se NESMÍ měnit z pozadí (jinak náhodné pády). Práce
+        // na pozadí (překlad, síť) sem zařadí UI dohru; Update ji vyprázdní.
+        private readonly System.Collections.Concurrent.ConcurrentQueue<Action>
+            _mainThreadQueue =
+                new System.Collections.Concurrent.ConcurrentQueue<Action>();
         private TextRenderer _textRenderer;
         private EncyclopediaView _encyclopediaView;
         private Texture2D _parchmentTexture;
@@ -338,26 +345,49 @@ namespace Frtal.LorebookReader {
             _cornerIcon = new CornerIcon(
                 ModuleParameters.ContentsManager.GetTexture("book.png"),
                 ModuleParameters.ContentsManager.GetTexture("book_hover.png"),
-                "Lorebook Encyclopedia");
+                "Lorebook Codex");
             _cornerIcon.Click += (s, a) => {
                 if (_historyWindow.Visible) {
+                    _encyclopediaView?.FlushEdits(); // dozapiš rozeditovaný text
                     _historyWindow.Hide();
                 } else {
                     ShowEncyclopedia();
                 }
             };
 
-            _historyWindow = new StandardWindow(
-                GameService.Content.DatAssetCache.GetTextureFromAssetId(155985),
-                new Microsoft.Xna.Framework.Rectangle(40, 26, 913, 691),
-                new Microsoft.Xna.Framework.Rectangle(70, 71, 839, 605),
-                new Point(880, 640)) {
-                Parent        = GameService.Graphics.SpriteScreen,
-                Title         = "Lorebook Encyclopedia",
-                SavesPosition = true,
-                CanResize     = true,
-                Id            = "frtal_lorebook_reader_encyclopedia"
-            };
+            // vlastní knižní rámeček okna (ref/window_bg.png); bez něj
+            // padne na standardní Blish okno
+            var winTex = GetRefTexture("window_bg.png");
+            if (winTex != null) {
+                int tw = winTex.Width, th = winTex.Height;
+                _historyWindow = new StandardWindow(
+                    winTex,
+                    new Microsoft.Xna.Framework.Rectangle(0, 0, tw, th),
+                    new Microsoft.Xna.Framework.Rectangle(
+                        (int)(tw * 0.030f), (int)(th * 0.078f),
+                        (int)(tw * 0.940f), (int)(th * 0.880f)),
+                    new Point(1120, 800)) {
+                    Parent        = GameService.Graphics.SpriteScreen,
+                    Title         = "Lorebook Codex",
+                    SavesPosition = true,
+                    CanResize     = true,
+                    Id            = "frtal_lorebook_reader_encyclopedia_v2"
+                };
+            } else {
+                _historyWindow = new StandardWindow(
+                    GameService.Content.DatAssetCache.GetTextureFromAssetId(155985),
+                    new Microsoft.Xna.Framework.Rectangle(40, 26, 913, 691),
+                    new Microsoft.Xna.Framework.Rectangle(70, 71, 839, 605),
+                    new Point(1120, 800)) {
+                    Parent        = GameService.Graphics.SpriteScreen,
+                    Title         = "Lorebook Codex",
+                    SavesPosition = true,
+                    CanResize     = true,
+                    Id            = "frtal_lorebook_reader_encyclopedia_v2"
+                };
+            }
+            // zavření okna (i křížkem) → dozapiš rozeditovaný text
+            _historyWindow.Hidden += (s, ev) => _encyclopediaView?.FlushEdits();
 
             base.OnModuleLoaded(e);
         }
@@ -1196,7 +1226,19 @@ namespace Frtal.LorebookReader {
         }
 
 
+        /// <summary>Zařadí akci k provedení na hlavním (Update) vlákně.
+        /// Volá se z background tasků, které potřebují sáhnout na UI.</summary>
+        internal void RunOnMainThread(Action action) {
+            if (action != null) _mainThreadQueue.Enqueue(action);
+        }
+
         protected override void Update(GameTime gameTime) {
+            // dohry z background tasků (překlad apod.) — bezpečně na UI vlákně
+            while (_mainThreadQueue.TryDequeue(out var act)) {
+                try { act(); }
+                catch (Exception ex) { Logger.Warn(ex, "Main-thread action failed."); }
+            }
+
             // 1x za sekundu zkusit najít knihu kvůli ikonce reproduktoru
             _detectTimerMs += gameTime.ElapsedGameTime.TotalMilliseconds;
             if (_detectTimerMs >= 1000) {
@@ -1397,6 +1439,7 @@ namespace Frtal.LorebookReader {
         }
 
         protected override void Unload() {
+            _encyclopediaView?.FlushEdits(); // neztrať rozeditovaný text
             _readKeybind.Value.Activated -= OnReadActivated;
             _stopKeybind.Value.Activated -= OnStopActivated;
             _convToggleKeybind.Value.Activated -= OnConvToggleActivated;
