@@ -9,11 +9,6 @@ story.
 
 ## What It Looks Like
 
-> **The images below are placeholders.** To add a screenshot: open this file
-> with the GitHub pencil (Edit) button, click on the placeholder line, and drag
-> your image onto it — GitHub uploads it and inserts the link automatically.
-> Then delete the italic placeholder note above it.
-
 ### Open a lorebook → three action buttons appear
 <img width="632" height="791" alt="Snímek obrazovky 2026-07-19 114605" src="https://github.com/user-attachments/assets/57bbba09-2cab-422c-afa7-93785d52c350" />
 
