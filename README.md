@@ -15,37 +15,33 @@ story.
 > Then delete the italic placeholder note above it.
 
 ### Open a lorebook → three action buttons appear
-<!-- SCREENSHOT 1 — drag image here: an open lorebook in-game with the three hand-painted icons (speaker / save / append) beside it -->
-_📸 Placeholder 1: in-world lorebook with the three action buttons._
+<img width="632" height="791" alt="Snímek obrazovky 2026-07-19 114605" src="https://github.com/user-attachments/assets/57bbba09-2cab-422c-afa7-93785d52c350" />
 
 Click **🔊** to read aloud + save, **➕** to save only, or **⬇️** to
 append this page to the last saved book.
 
 ### Subtitles while playing
-<!-- SCREENSHOT 2 — drag image here: subtitles shown over gameplay while a book is being read aloud -->
-_📸 Placeholder 2: subtitles while reading._
+<img width="1330" height="1147" alt="Snímek obrazovky 2026-07-19 204444" src="https://github.com/user-attachments/assets/baee4c04-4169-482a-af1d-47faee330a12" />
+
 
 Optional on-screen captions with full diacritics, adjustable size and
 position.
 
 ### The codex — expansion rail + book reader
-<!-- SCREENSHOT 3 — drag image here: the codex window with the expansion rail (icons + counts) on the left, the book list in the middle, and a book open on its cover page (ideally one with an expansion stamp) -->
-_📸 Placeholder 3: codex window — expansion rail, book list, and a book open on its illustrated cover._
+<img width="1132" height="812" alt="Snímek obrazovky 2026-07-19 114736" src="https://github.com/user-attachments/assets/20b07769-abfc-4f1a-bc35-51c9724a8858" />
 
 Browse your collection by expansion, then read each book on a parchment page
 with a cover, an expansion stamp (or a red wax seal), page-turn buttons, and a
 gold **NEW** badge on books you have not opened yet.
 
 ### Full-window reading
-<!-- SCREENSHOT 4 — drag image here: a book expanded across the whole window using the corner bracket toggle -->
-_📸 Placeholder 4: full-window reading mode._
+<img width="1162" height="827" alt="Snímek obrazovky 2026-07-19 114703" src="https://github.com/user-attachments/assets/68188527-1c5c-4b24-b14c-e0d913448c08" />
 
 Click the bracket mark in a book's corner to expand it across the whole window
 for comfortable reading; click again to return.
 
 ### Full-window editing
-<!-- SCREENSHOT 5 — drag image here: the editor filling the whole window (metadata fields on the left, large text box on the right, "Done editing" button at the top) -->
-_📸 Placeholder 5: full-window editor._
+<img width="1125" height="815" alt="Snímek obrazovky 2026-07-19 114743" src="https://github.com/user-attachments/assets/77c84fa0-314c-44d6-a7bc-a087aca4ff3a" />
 
 Press **Edit** to fix OCR text or add metadata across the entire frame, then
 **Done editing** to return to browsing.
@@ -199,8 +195,7 @@ across the game's lighting conditions.
 
 All settings are accessible in Blish HUD → Manage Modules → **Lorebook Codex
 and TTS** → Settings (gear icon).
-<!-- SCREENSHOT 6 — drag image here: the module's settings panel -->
-_📸 Placeholder 6: the settings panel._
+<img width="792" height="778" alt="Snímek obrazovky 2026-07-19 114813" src="https://github.com/user-attachments/assets/0cf2407f-ae83-4911-8d9f-f367e2f57b53" />
 
 
 
