@@ -3,6 +3,24 @@
 All notable changes to Lorebook Codex and TTS are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## 0.8.1 — 2026-07-24
+
+### Fixed
+- **Pressing Backspace right after Enter no longer crashes Blish HUD.** The
+  editor resized its text box while the text control was still processing the
+  change, which could take the whole overlay down. The resize now happens on
+  the next frame instead.
+- **Poems, songs and lists keep their line breaks.** Verse used to be reflowed
+  into a solid paragraph (and a short line could even be mistaken for a bold
+  heading). Books whose lines deliberately stop short of the margin now keep
+  their shape, and a line break you type in the editor is respected instead of
+  being merged away.
+- **Your library is no longer lost after a crash.** If `catalog.json` goes
+  missing or comes back empty after an unclean shutdown, the module now
+  restores your books from its own backup file instead of starting with an
+  empty codex (which previously overwrote the backup as well). A note explains
+  what was recovered.
+
 ## 0.8.0 — 2026-07-18
 
 The module is now **Lorebook Codex and TTS**. This release turns the

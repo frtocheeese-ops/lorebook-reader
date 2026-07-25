@@ -46,12 +46,18 @@ namespace Frtal.LorebookReader {
             if (string.IsNullOrWhiteSpace(raw)) return "";
             // odstavce = bloky oddělené prázdným řádkem (z OcrService)
             var paras = Regex.Split(raw, @"\n[ \t]*\n");
+            bool verse = LooksLikeVerse(raw);
             var outParas = new System.Collections.Generic.List<string>();
             foreach (string para in paras) {
                 var plines = para.Split('\n')
                                  .Select(l => l.Trim())
                                  .Where(l => l.Length > 0);
-                string joined = CleanInline(string.Join(" ", plines));
+                // báseň / seznam: zalomení řádků NESE význam, nespojovat.
+                // Próza: řádky jsou jen zalomení sloupce -> zreflowovat.
+                string joined = verse
+                    ? string.Join("\n", plines.Select(CleanInline)
+                                              .Where(l => l.Length > 0))
+                    : CleanInline(string.Join(" ", plines));
                 if (joined.Length > 0) outParas.Add(joined);
             }
             // odstranit koncové ne-odstavce (číslo stránky, dekorace)
@@ -59,6 +65,30 @@ namespace Frtal.LorebookReader {
                    && !IsGoodLine(outParas[outParas.Count - 1]))
                 outParas.RemoveAt(outParas.Count - 1);
             return string.Join("\n\n", outParas).Trim();
+        }
+
+        /// <summary>Pozná text, jehož zalomení řádků je záměrné — báseň,
+        /// píseň, seznam, výčet. U zalomené prózy skoro každý řádek doplní
+        /// sloupec až k okraji a krátký je jen poslední řádek odstavce;
+        /// u veršů je krátká většina řádků. Měří se vůči nejdelšímu řádku
+        /// (medián selhává, když jsou krátké VŠECHNY řádky — hlášeno
+        /// 23.7.2026 na básni „Silken Weir").</summary>
+        private static bool LooksLikeVerse(string raw) {
+            var lines = raw.Split('\n')
+                           .Select(l => l.Trim())
+                           .Where(l => l.Length > 0)
+                           .ToList();
+            if (lines.Count < 3) return false;
+
+            // výčty a odrážky jsou taky "verš" (zalomení nese význam)
+            int bullets = lines.Count(l => Regex.IsMatch(
+                l, @"^([•·●○◦▪‣*\-–—]|\d{1,3}[.)])\s"));
+            if (bullets >= 2) return true;
+
+            int maxLen = lines.Max(l => l.Length);
+            if (maxLen < 12) return false;
+            int shortLines = lines.Count(l => l.Length < maxLen * 0.75);
+            return shortLines >= lines.Count * 0.5;
         }
 
         /// <summary>Společné inline čištění spojeného textu (záměny znaků,

@@ -93,15 +93,30 @@ namespace Frtal.LorebookReader {
             // nadpis: řádek < 62 % typické šířky, po němž následuje řádek
             // v běžné rozteči (poslední krátký řádek odstavce nadpis není —
             // po něm přijde mezera nebo nic)
+            // báseň/píseň/výčet: většina řádků nedosahuje k okraji sloupce
+            // (u zalomené prózy je krátký jen poslední řádek odstavce).
+            // Měříme vůči NEJŠIRŠÍMU řádku — medián selhává, když jsou
+            // krátké všechny řádky (báseň „Silken Weir", 23.7.2026).
+            double colW = 0;
+            foreach (double wd in widths) if (wd > colW) colW = wd;
+            int shortVsCol = 0;
+            if (colW > 0)
+                foreach (double wd in widths)
+                    if (wd > 0 && wd < colW * 0.75) shortVsCol++;
+            bool verseDoc = n >= 3 && shortVsCol >= n * 0.5;
+
+            // ve verších se krátký řádek NESMÍ brát jako nadpis ani položka
+            // seznamu — jinak se báseň rozpadne na odstavce
             bool IsHeading(int i) =>
-                pitch > 0 && medWidth > 0 && n >= 3
+                !verseDoc
+                && pitch > 0 && medWidth > 0 && n >= 3
                 && widths[i] < medWidth * 0.62
                 && i + 1 < n && (tops[i + 1] - tops[i]) <= pitch * 1.5;
 
             // krátký řádek (nevyplňuje šířku) — stavební prvek detekce seznamů
             var shortLine = new bool[n];
             for (int i = 0; i < n; i++)
-                shortLine[i] = medWidth > 0 && widths[i] > 0
+                shortLine[i] = !verseDoc && medWidth > 0 && widths[i] > 0
                                && widths[i] < medWidth * 0.80;
 
             // řádek seznamu: začíná odrážkou/číslem, NEBO je součástí běhu

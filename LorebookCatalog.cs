@@ -321,10 +321,43 @@ namespace Frtal.LorebookReader {
         }
 
         private void Load() {
-            if (!File.Exists(_filePath)) return;
+            // 0) hlavní soubor chybí (pád uprostřed zápisu, úklid složky,
+            //    problém se synchronizací…). Dřív jsme rovnou začali s
+            //    prázdným katalogem — a první Save pak přepsal i .bak, takže
+            //    knihovna zmizela nadobro (hlášeno 23.7.2026). Teď se
+            //    nejdřív pokusíme obnovit z .bak / .tmp.
+            if (!File.Exists(_filePath)) {
+                foreach (string candidate in new[] { _filePath + ".bak",
+                                                     _filePath + ".tmp" }) {
+                    if (File.Exists(candidate)
+                        && TryLoadFile(candidate, out var rescued)
+                        && rescued.Count > 0) {
+                        AdoptEntries(rescued);
+                        LoadWarning = "catalog.json was missing — restored "
+                            + rescued.Count + " books from "
+                            + Path.GetFileName(candidate) + ".";
+                        Save();
+                        return;
+                    }
+                }
+                return; // opravdu nic k obnovení = čistý start
+            }
 
             // 1) hlavní soubor
             if (TryLoadFile(_filePath, out var loaded)) {
+                // prázdný katalog vedle neprázdné zálohy = podezřelé
+                // (přepis po havárii) — raději nabídnout zálohu
+                if (loaded.Count == 0) {
+                    string bak0 = _filePath + ".bak";
+                    if (File.Exists(bak0) && TryLoadFile(bak0, out var prev)
+                        && prev.Count > 0) {
+                        AdoptEntries(prev);
+                        LoadWarning = "catalog.json was empty — restored "
+                            + prev.Count + " books from catalog.json.bak.";
+                        Save();
+                        return;
+                    }
+                }
                 AdoptEntries(loaded);
                 return;
             }

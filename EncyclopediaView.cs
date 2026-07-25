@@ -697,7 +697,19 @@ namespace Frtal.LorebookReader {
             };
             textEdit.TextChanged += (s, e) => {
                 entry.Text = UnwrapFromEdit(textEdit.Text);   // in-place, levné
-                textEdit.Height = EditContentHeight(textEdit.Text);
+                // KRITICKÉ: výšku NIKDY neměnit uvnitř TextChanged. Blishí
+                // MultilineTextBox uprostřed zpracování změny přepočítá
+                // rozvržení a sáhne na kurzor/řádky, které ještě odpovídají
+                // starému textu -> NRE a pád celého Blish (reprodukce:
+                // Enter a hned Backspace; hlášeno 23.7.2026). Změnu velikosti
+                // proto odložíme na další snímek, mimo tento handler.
+                int wanted = EditContentHeight(textEdit.Text);
+                if (wanted != textEdit.Height) {
+                    _module.RunOnMainThread(() => {
+                        if (textEdit.Parent != null)         // ne po zavření
+                            textEdit.Height = EditContentHeight(textEdit.Text);
+                    });
+                }
                 ScheduleEditFlush();                          // disk až po pauze
             };
 

@@ -250,8 +250,17 @@ namespace Frtal.LorebookReader {
                 string para = rawPara.Trim();
                 if (para.Length == 0) continue;
                 bool head = IsHeading(para);
-                var lines = _tr.WrapText(para.Replace('\n', ' '),
-                    head ? _fontSize + 2 : _fontSize, wrapW, bold: head);
+                // Zalomení uvnitř odstavce je ZÁMĚRNÉ (verš, sloka, položka
+                // výčtu — nebo ho tam napsal uživatel v editoru), takže se
+                // nesmí slepit. Každý řádek zalomíme zvlášť; dlouhý řádek se
+                // případně přeteče na další, ale nespojí se s dalším veršem.
+                var lines = new List<string>();
+                foreach (string srcLine in para.Split('\n')) {
+                    string ln0 = srcLine.Trim();
+                    if (ln0.Length == 0) continue;
+                    lines.AddRange(_tr.WrapText(ln0,
+                        head ? _fontSize + 2 : _fontSize, wrapW, bold: head));
+                }
                 bool first = true;
                 foreach (string ln in lines) {
                     float lh = head ? headH : lineH;
