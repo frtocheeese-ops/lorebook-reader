@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Blish_HUD;
 using Blish_HUD.Controls;
 using Blish_HUD.Graphics.UI;
@@ -206,10 +207,18 @@ namespace Frtal.LorebookReader {
                 counts.Remove(name);
                 y = AddRailRow(y, rowW, mini, name, name, code, c);
             }
+            // povídky mají vlastní řádek níž, mezi vlastní hodnoty nepatří
+            counts.Remove(ShortStoryLibrary.Expansion);
             foreach (var kv in counts.OrderBy(k => k.Key))
                 y = AddRailRow(y, rowW, mini, kv.Key, kv.Key,
                     kv.Key.Length <= 4 ? kv.Key
                         : kv.Key.Substring(0, 3) + "…", kv.Value);
+            // oficiální povídky z wiki — vlastní sekce, vždy předposlední
+            counts.TryGetValue(ShortStoryLibrary.Expansion, out int storyCount);
+            counts.Remove(ShortStoryLibrary.Expansion);
+            y = AddRailRow(y, rowW, mini, ShortStoryLibrary.Expansion,
+                "Short Stories", "SS", storyCount);
+
             if (noXp > 0)
                 AddRailRow(y, rowW, mini, "", "No expansion", "—", noXp);
         }
@@ -303,6 +312,18 @@ namespace Frtal.LorebookReader {
                     : results.Where(e => string.Equals(
                           e.Expansion?.Trim(), _filterXp,
                           StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            // sekce povídek: pod staženými ukázat i tituly, které uživatel
+            // ještě nemá — kliknutím se nabídne stažení
+            if (_filterXp == ShortStoryLibrary.Expansion) {
+                foreach (var entry in results) AddListRow(entry);
+                foreach (var story in ShortStoryLibrary.All) {
+                    bool have = results.Any(e => string.Equals(
+                        e.Title, story.Title, StringComparison.OrdinalIgnoreCase));
+                    if (!have) AddStoryRow(story);
+                }
+                return;
             }
 
             if (results.Count == 0) {
@@ -403,6 +424,114 @@ namespace Frtal.LorebookReader {
         }
 
         // ===================== DETAIL: prázdný =====================
+        /// <summary>Řádek dosud nestažené povídky v seznamu.</summary>
+        private void AddStoryRow(ShortStory story) {
+            var row = new Panel {
+                Parent = _listPanel, Width = _listPanel.Width - 20, Height = 46,
+                BackgroundColor = Color.Transparent
+            };
+            row.MouseEntered += (s, e) =>
+                row.BackgroundColor = new Color(48, 54, 66);
+            row.MouseLeft += (s, e) => row.BackgroundColor = Color.Transparent;
+
+            new Label {
+                Parent = row, Location = new Point(12, 4),
+                Width = row.Width - 20, Height = 22, Text = story.Title,
+                Font = GameService.Content.DefaultFont16,
+                TextColor = new Color(190, 190, 190)
+            };
+            new Label {
+                Parent = row, Location = new Point(12, 26),
+                Width = row.Width - 20, Height = 16,
+                Text = "Not downloaded · " + story.Timeline,
+                TextColor = new Color(140, 140, 140),
+                Font = GameService.Content.DefaultFont12
+            };
+            row.Click += (s, e) => ShowStoryOffer(story);
+        }
+
+        /// <summary>Nabídka stažení jedné povídky: proč to takhle je + tlačítko.
+        /// Po stažení se rovnou otevře normální náhled knihy.</summary>
+        private void ShowStoryOffer(ShortStory story) {
+            _mode = DetailMode.Empty;
+            _selected = null;
+            _detailPanel.ClearChildren();
+            int w = _detailPanel.Width;
+
+            new Label {
+                Parent = _detailPanel, Location = new Point(12, 10),
+                Width = w - 24, Height = 28, Text = story.Title,
+                Font = GameService.Content.DefaultFont18
+            };
+            new Label {
+                Parent = _detailPanel, Location = new Point(12, 42),
+                Width = w - 24, Height = 20,
+                Text = story.Writer + " · " + story.Published
+                     + " · " + story.Timeline,
+                TextColor = new Color(170, 170, 170)
+            };
+
+            var getBtn = new StandardButton {
+                Parent = _detailPanel, Location = new Point(12, 74),
+                Width = 130, Text = "Download"
+            };
+            var status = new Label {
+                Parent = _detailPanel, Location = new Point(150, 78),
+                Width = w - 170, Height = 20, Text = "",
+                TextColor = new Color(170, 200, 170)
+            };
+            var why = new Label {
+                Parent = _detailPanel, Location = new Point(12, 112),
+                Width = w - 24, Height = 130, WrapText = true,
+                TextColor = new Color(160, 160, 160),
+                Text = "Why isn't this already here?\n\n"
+                     + "The short stories were written and published by "
+                     + "ArenaNet, so the module does not ship copies of them. "
+                     + "Instead it fetches this one from the Guild Wars 2 Wiki "
+                     + "when you ask for it, and stores it in your own codex "
+                     + "together with a link back to the source.\n\n"
+                     + "You need an internet connection for this step only — "
+                     + "once downloaded, the story is yours to read offline."
+            };
+
+            getBtn.Click += (s, e) => {
+                getBtn.Enabled = false;
+                status.Text = "Downloading…";
+                System.Threading.Tasks.Task.Run(async () => {
+                    try {
+                        string text = await ShortStoryLibrary
+                            .FetchAsync(story, _module.StoryImageDirectory)
+                            .ConfigureAwait(false);
+                        // katalog i UI výhradně z hlavního vlákna
+                        _module.RunOnMainThread(() => {
+                            var entry = _catalog.AddCaptured(story.Title, text);
+                            if (entry != null) {
+                                entry.Expansion = ShortStoryLibrary.Expansion;
+                                entry.Theme     = story.Timeline;
+                                entry.Location  = story.Writer;
+                                entry.Notes     = "Source: " + story.Url;
+                                entry.Opened    = false;
+                                _catalog.Update(entry);
+                                FillRail();
+                                RefreshList();
+                                _selected = entry;
+                                ShowPreview(entry);   // rovnou normální kniha
+                            }
+                        });
+                    } catch (Exception ex) {
+                        Logger.GetLogger<EncyclopediaView>()
+                              .Warn(ex, "Short story download failed.");
+                        _module.RunOnMainThread(() => {
+                            status.Text = "Download failed — check your "
+                                        + "connection and try again.";
+                            status.TextColor = new Color(210, 150, 150);
+                            getBtn.Enabled = true;
+                        });
+                    }
+                });
+            };
+        }
+
         private void ShowEmpty() {
             _mode = DetailMode.Empty;
             _detailPanel.ClearChildren();
@@ -463,13 +592,20 @@ namespace Frtal.LorebookReader {
                 Width = 80, Text = "▶ Play"
             };
             playBtn.Click += (s, e) => _module.PlayFromCatalog(entry);
-            var stopBtn = new StandardButton {
+            var pauseBtn = new StandardButton {
                 Parent = _detailPanel, Location = new Point(96, 44),
+                Width = 80,
+                Text = _module.SpeechPaused ? "Resume" : "Pause"
+            };
+            pauseBtn.Click += (s, e) =>
+                pauseBtn.Text = _module.TogglePauseSpeaking() ? "Resume" : "Pause";
+            var stopBtn = new StandardButton {
+                Parent = _detailPanel, Location = new Point(180, 44),
                 Width = 72, Text = "■ Stop"
             };
             stopBtn.Click += (s, e) => _module.StopSpeaking();
             var editBtn = new StandardButton {
-                Parent = _detailPanel, Location = new Point(172, 44),
+                Parent = _detailPanel, Location = new Point(256, 44),
                 Width = 80, Text = "Edit"
             };
             editBtn.Click += (s, e) => {
@@ -506,7 +642,9 @@ namespace Frtal.LorebookReader {
             // ovládání velikosti písma
             var fontMinus = new StandardButton {
                 Parent = _detailPanel, Location = new Point(w - 92, 78),
-                Width = 36, Text = "A−"
+                // pozor: obyčejný spojovník, ne „−" (U+2212) — herní font
+                // ten znak nemá a tlačítko pak ukazuje jen „A"
+                Width = 36, Text = "A-"
             };
             var fontPlus = new StandardButton {
                 Parent = _detailPanel, Location = new Point(w - 52, 78),
@@ -791,12 +929,33 @@ namespace Frtal.LorebookReader {
             GameService.Animation.Tweener.Tween(
                 reader, new { Opacity = 1f }, 0.2f);
 
-            var fontMinus = new StandardButton {
+            // předčítání i ve fullscreenu (přání uživatele 26.7.2026)
+            var playBtn = new StandardButton {
                 Parent = _root, Location = new Point(16, 12),
-                Width = 36, Text = "A−"
+                Width = 70, Text = "▶ Play"
+            };
+            playBtn.Click += (s, e) => _module.PlayFromCatalog(_selected);
+            var pauseBtn = new StandardButton {
+                Parent = _root, Location = new Point(90, 12),
+                Width = 78,
+                Text = _module.SpeechPaused ? "Resume" : "Pause"
+            };
+            pauseBtn.Click += (s, e) =>
+                pauseBtn.Text = _module.TogglePauseSpeaking() ? "Resume" : "Pause";
+            var stopBtn = new StandardButton {
+                Parent = _root, Location = new Point(172, 12),
+                Width = 70, Text = "■ Stop"
+            };
+            stopBtn.Click += (s, e) => _module.StopSpeaking();
+
+            var fontMinus = new StandardButton {
+                Parent = _root, Location = new Point(250, 12),
+                // pozor: obyčejný spojovník, ne „−" (U+2212) — herní font
+                // ten znak nemá a tlačítko pak ukazuje jen „A"
+                Width = 36, Text = "A-"
             };
             var fontPlus = new StandardButton {
-                Parent = _root, Location = new Point(56, 12),
+                Parent = _root, Location = new Point(290, 12),
                 Width = 36, Text = "A+"
             };
             fontMinus.Click += (s, e) => {
@@ -847,12 +1006,24 @@ namespace Frtal.LorebookReader {
         /// označí markerem.</summary>
         private string WrapForEdit(string text, int pixelWidth) {
             if (string.IsNullOrEmpty(text)) return "";
+            // značku ilustrace ukázat čitelně; UnwrapFromEdit ji vrátí zpět
+            text = Regex.Replace(text, @"⟦IMG:([^⟧]*)⟧", "[image: $1]");
             var font = GameService.Content.DefaultFont18;
             int maxW = Math.Max(60, pixelWidth - 24);
             var sb = new System.Text.StringBuilder();
 
             string[] hardLines = text.Replace("\r", "").Split('\n');
             for (int li = 0; li < hardLines.Length; li++) {
+                // PRÁZDNÝ ŘÁDEK (předěl odstavce) nahradíme mezerou. Blishí
+                // MultilineTextBox spadne (NRE v GetCursorIndexFromPosition),
+                // když se klikne na řádek bez jediného znaku — a předěl
+                // odstavce má v editoru každá kniha (crash 26.7.2026).
+                // Mezeru při ukládání zase odstraníme (UnwrapFromEdit).
+                if (hardLines[li].Length == 0) {
+                    sb.Append(' ');
+                    if (li < hardLines.Length - 1) sb.Append('\n');
+                    continue;
+                }
                 string[] words = hardLines[li].Split(' ');
                 string current = "";
                 foreach (string word in words) {
@@ -876,7 +1047,14 @@ namespace Frtal.LorebookReader {
         /// tvrdé konce řádků zachová.</summary>
         private static string UnwrapFromEdit(string text) {
             if (string.IsNullOrEmpty(text)) return "";
-            return text.Replace(SoftBreak, " ").Replace("\u200B", "");
+            text = text.Replace(SoftBreak, " ").Replace("\u200B", "");
+            // \u010Diteln\u00FD z\u00E1pis ilustrace zp\u011Bt na zna\u010Dku pro \u010Dte\u010Dku
+            text = Regex.Replace(text, @"\[image:\s*([^\]]*)\]", "\u27E6IMG:$1\u27E7");
+            // v\u00FDpl\u0148ov\u00E9 mezery z pr\u00E1zdn\u00FDch \u0159\u00E1dk\u016F (viz WrapForEdit) pry\u010D,
+            // a\u0165 se do katalogu ulo\u017E\u00ED \u010Dist\u00FD text
+            var lines = text.Replace("\r", "").Split('\n');
+            for (int i = 0; i < lines.Length; i++) lines[i] = lines[i].TrimEnd();
+            return string.Join("\n", lines);
         }
     }
 }

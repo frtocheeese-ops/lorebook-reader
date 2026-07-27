@@ -51,6 +51,34 @@ namespace Frtal.LorebookReader {
         // (iniciála/drop cap vyzkoušena v 0.7.1 a na přání odstraněna)
         private struct Line {
             public string Text; public bool Head; public bool Gap;
+            public Texture2D Img; public int ImgH;   // ilustrace místo řádku
+        }
+
+        /// <summary>Složka se staženými ilustracemi povídek (nastaví modul).
+        /// Textury se načítají líně a drží v cache do Unloadu.</summary>
+        public static string ImageDirectory;
+        private static readonly Dictionary<string, Texture2D> ImgCache =
+            new Dictionary<string, Texture2D>();
+
+        private static Texture2D LoadImage(string fileName) {
+            if (string.IsNullOrEmpty(ImageDirectory)) return null;
+            if (ImgCache.TryGetValue(fileName, out var cached)) return cached;
+            Texture2D tex = null;
+            try {
+                string path = System.IO.Path.Combine(ImageDirectory, fileName);
+                if (System.IO.File.Exists(path))
+                    using (var fs = System.IO.File.OpenRead(path))
+                        tex = Blish_HUD.TextureUtil.FromStreamPremultiplied(fs);
+            } catch (Exception ex) {
+                Logger.Warn(ex, "Story illustration could not be loaded.");
+            }
+            ImgCache[fileName] = tex;   // i null, ať to nezkoušíme pořád
+            return tex;
+        }
+
+        public static void ClearImageCache() {
+            foreach (var t in ImgCache.Values) t?.Dispose();
+            ImgCache.Clear();
         }
         private readonly List<List<Line>> _pages = new List<List<Line>>();
         private int _page;          // 0 = obálka, 1..N = _pages[i-1]
@@ -249,6 +277,33 @@ namespace Frtal.LorebookReader {
                          .Split(new[] { "\n\n" }, StringSplitOptions.None)) {
                 string para = rawPara.Trim();
                 if (para.Length == 0) continue;
+
+                // ilustrace: celý odstavec je značka ⟦IMG:soubor⟧
+                if (para.StartsWith(ShortStoryLibrary.ImagePrefix,
+                                    StringComparison.Ordinal)
+                    && para.EndsWith(ShortStoryLibrary.ImageSuffix,
+                                     StringComparison.Ordinal)) {
+                    string file = para.Substring(
+                        ShortStoryLibrary.ImagePrefix.Length,
+                        para.Length - ShortStoryLibrary.ImagePrefix.Length
+                          - ShortStoryLibrary.ImageSuffix.Length);
+                    var tex = LoadImage(file);
+                    if (tex == null) continue;
+                    // vejít se na šířku i do ~55 % výšky stránky
+                    float scale = Math.Min(
+                        (float)wrapW / tex.Width,
+                        availH * 0.55f / tex.Height);
+                    if (scale > 1f) scale = 1f;
+                    int ih = Math.Max(1, (int)(tex.Height * scale));
+                    if (used + ih + gapH > availH && cur.Count > 0) {
+                        _pages.Add(cur); cur = new List<Line>(); used = 0;
+                    }
+                    cur.Add(new Line { Text = "", Img = tex, ImgH = ih,
+                                       Gap = cur.Count > 0 });
+                    used += ih + gapH;
+                    continue;
+                }
+
                 bool head = IsHeading(para);
                 // Zalomení uvnitř odstavce je ZÁMĚRNÉ (verš, sloka, položka
                 // výčtu — nebo ho tam napsal uživatel v editoru), takže se
@@ -430,6 +485,18 @@ namespace Frtal.LorebookReader {
             var lines = _pages[_page - 1];
             float y = bounds.Y + PadTop;
             foreach (var ln in lines) {
+                if (ln.Img != null) {                       // ilustrace
+                    if (ln.Gap) y += _tr.LineHeight(_fontSize) * 0.55f;
+                    int iw = (int)(ln.Img.Width
+                        * ((float)ln.ImgH / ln.Img.Height));
+                    float cx = bounds.X + (bounds.Width - iw) / 2f;
+                    int dx = SqueezeX(bounds, page, f, anchorLeft, cx);
+                    sb.DrawOnCtrl(this, ln.Img,
+                        new Rectangle(dx, (int)y, (int)(iw * f), ln.ImgH),
+                        null, Color.White);
+                    y += ln.ImgH;
+                    continue;
+                }
                 float lh = ln.Head
                     ? _tr.LineHeight(_fontSize + 2, bold: true)
                     : _tr.LineHeight(_fontSize);
@@ -558,7 +625,9 @@ namespace Frtal.LorebookReader {
         /// fallback je inkoustový rámeček s názvem datadisku.</summary>
         private void PaintStamp(SpriteBatch sb, Rectangle bounds, Rectangle page,
                                 float f, bool anchorLeft, int centerY) {
-            const float rot = -0.14f; // ~ -8°
+            // logo se kreslí rovně — náklon zbyl po variantě, kdy razítko
+            // bylo jen červený text; u obrázků působí neuhlazeně (26.7.2026)
+            const float rot = 0f;
             float cxF = bounds.X + bounds.Width / 2f;
             var center = new Vector2(
                 SqueezeX(bounds, page, f, anchorLeft, cxF), centerY);

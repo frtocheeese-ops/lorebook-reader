@@ -3,6 +3,45 @@
 All notable changes to Lorebook Codex and TTS are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## 0.8.3 — 2026-07-26
+
+### Fixed
+- **Clicking in the text editor no longer crashes Blish HUD.** Every book has
+  a blank line between paragraphs, and clicking one could take the overlay
+  down. Blank lines now carry an invisible placeholder while you edit; the
+  saved text is unchanged.
+- **The window no longer shrinks its maximum width after the first resize.**
+
+### Added
+- **Pause.** Narration can be paused and picked up where it stopped, from the
+  book view, the full-window reader, or a keybind (default `Ctrl+Alt+P`).
+  Subtitles hold their place while paused.
+- **Illustrations in short stories.** Pictures from the wiki page are
+  downloaded alongside the text and drawn in the book where they belong.
+- **Official short stories.** A new "Short Stories" section in the expansion
+  rail lists all 30 short stories ArenaNet published outside the game. Pick a
+  title and it is downloaded from the Guild Wars 2 Wiki into your codex — text,
+  illustrations, the writer, its placement in the timeline, and a link back to
+  the source. Nothing is bundled with the module; a story is fetched only when
+  you ask for it, and stays in your codex to read offline afterwards.
+- Play and Stop buttons while reading a book full-window.
+
+### Changed
+- Expansion logos on cover pages are no longer tilted.
+
+## 0.8.2 — 2026-07-26
+
+### Fixed
+- **Updating the module no longer crashes Blish HUD.** Shutting the module
+  down during an update could fail while releasing the audio player, and that
+  failure took the whole overlay with it. Shutdown is now fully guarded, so an
+  update finishes cleanly.
+
+  **Please note:** installing *this* update may still crash Blish HUD one last
+  time, because the faulty shutdown lives in the version you are updating
+  from. Simply restart Blish HUD and you are on the fixed version — updates
+  from here on will be clean.
+
 ## 0.8.1 — 2026-07-24
 
 ### Fixed

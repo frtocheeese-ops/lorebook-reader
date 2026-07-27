@@ -20,6 +20,23 @@ namespace Frtal.LorebookReader {
         private readonly SpeechSynthesizer _synth = new SpeechSynthesizer();
         private CancellationTokenSource _cts;
         private WaveOutEvent _currentOut;
+        // pauza: kromě zvuku se musí zastavit i hodiny, podle kterých se
+        // titulky trefují do slov — jinak by po obnovení utekly dopředu
+        private System.Diagnostics.Stopwatch _currentClock;
+
+        public bool IsPaused { get; private set; }
+
+        public void Pause() {
+            try { _currentOut?.Pause(); } catch { /* ignore */ }
+            try { _currentClock?.Stop(); } catch { /* ignore */ }
+            IsPaused = true;
+        }
+
+        public void Resume() {
+            try { _currentOut?.Play(); } catch { /* ignore */ }
+            try { _currentClock?.Start(); } catch { /* ignore */ }
+            IsPaused = false;
+        }
 
         /// <summary>Nainstalované hlasy: (zobrazované jméno, jazykový tag).</summary>
         public static IEnumerable<(string Name, string Lang)> InstalledVoices() =>
@@ -70,14 +87,19 @@ namespace Frtal.LorebookReader {
         }
 
         public void Stop() {
+            IsPaused = false;
             try { _cts?.Cancel(); } catch { /* ignore */ }
             try { _currentOut?.Stop(); } catch { /* ignore */ }
         }
 
+        /// <summary>Uklidí přehrávání a syntetizér. Každý krok je odděleně
+        /// odstíněný: při AKTUALIZACI modulu volá Blish Unload až z
+        /// finalizeru, kdy už NAudio nemusí jít načíst — neodchycená výjimka
+        /// z finalizeru zabije celý proces (crash 26.7.2026).</summary>
         public void Dispose() {
-            Stop();
-            _currentOut?.Dispose();
-            _synth.Dispose();
+            try { Stop(); } catch { /* shutting down */ }
+            try { _currentOut?.Dispose(); } catch { /* NAudio už nemusí být */ }
+            try { _synth?.Dispose(); } catch { /* ignore */ }
         }
 
         // ---------------------------------------------------------------------
@@ -137,6 +159,8 @@ namespace Frtal.LorebookReader {
                 output.Init(reader);
                 output.Play();
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                _currentClock = sw;
+                if (IsPaused) { output.Pause(); sw.Stop(); }  // pauza i přes chunky
                 int wi = 0;
                 using (ct.Register(() => {
                            try { output.Stop(); } catch { /* ignore */ }
@@ -154,6 +178,7 @@ namespace Frtal.LorebookReader {
                     }
                 }
                 _currentOut = null;
+                _currentClock = null;
             }
         }
     }

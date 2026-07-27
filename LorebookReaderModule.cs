@@ -48,6 +48,8 @@ namespace Frtal.LorebookReader {
         private SettingEntry<string>     _bookZone;            // OCR pole knížky (px + stamp)
         private SettingEntry<KeyBinding> _bookCalibrateKeybind;
         private SettingEntry<bool>       _encRailCollapsed;    // rail encyklopedie jen ikony
+        private SettingEntry<KeyBinding> _pauseKeybind;
+        private volatile bool            _speechPaused;
 
         // přístup pro LorebookSettingsView
         internal SettingEntry<KeyBinding> ReadKeybindSetting       => _readKeybind;
@@ -152,6 +154,12 @@ namespace Frtal.LorebookReader {
                 new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.S),
                 () => "Stop reading",
                 () => "Stops the current text-to-speech playback.");
+
+            _pauseKeybind = settings.DefineSetting(
+                "PauseKeybind",
+                new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.P),
+                () => "Pause / resume reading",
+                () => "Pauses the narration and picks it up where it stopped.");
 
             _showSpeakerButton = settings.DefineSetting(
                 "ShowSpeakerButton", true,
@@ -284,6 +292,9 @@ namespace Frtal.LorebookReader {
                 .GetFullDirectoryPath("lorebook_reader");
             _catalog = new LorebookCatalog(dir);
             _catalog.Changed += () => _catalogDirty = true;
+            // ilustrace stažených povídek (čtečka je odsud načítá)
+            StoryImageDirectory = System.IO.Path.Combine(dir, "images");
+            BookReaderPanel.ImageDirectory = StoryImageDirectory;
             Logger.Info("Available TTS voices: "
                         + string.Join(", ", TtsService.InstalledVoices()
                             .Select(v => $"{v.Name} [{v.Lang}]")));
@@ -295,6 +306,8 @@ namespace Frtal.LorebookReader {
             _readKeybind.Value.Activated += OnReadActivated;
             _stopKeybind.Value.Enabled = true;
             _stopKeybind.Value.Activated += OnStopActivated;
+            _pauseKeybind.Value.Enabled = true;
+            _pauseKeybind.Value.Activated += OnPauseActivated;
             _convToggleKeybind.Value.Enabled = true;
             _convToggleKeybind.Value.Activated += OnConvToggleActivated;
             _debugDumpKeybind.Value.Enabled = true;
@@ -366,10 +379,15 @@ namespace Frtal.LorebookReader {
                     new Microsoft.Xna.Framework.Rectangle(
                         (int)(tw * 0.030f), (int)(th * 0.078f),
                         (int)(tw * 0.940f), (int)(th * 0.880f)),
-                    new Point(1120, 800)) {
+                    // Výchozí velikost NESMÍ přesáhnout rozměr pozadí:
+                    // Blish okno při prvním tažení srazí na velikost textury
+                    // a nad ni už nejde roztáhnout (hlášeno 26.7.2026).
+                    // Větší strop = větší window_bg.png.
+                    new Point(Math.Min(1120, tw), Math.Min(800, th))) {
                     Parent        = GameService.Graphics.SpriteScreen,
                     Title         = "Lorebook Codex",
                     SavesPosition = true,
+                    SavesSize     = true,   // ať zvolená velikost vydrží
                     CanResize     = true,
                     Id            = "frtal_lorebook_reader_encyclopedia_v2"
                 };
@@ -431,7 +449,11 @@ namespace Frtal.LorebookReader {
         private void OnStopActivated(object sender, EventArgs e) {
             _tts.Stop();
             _edgeTts?.Stop();
+            _speechPaused = false;
         }
+
+        private void OnPauseActivated(object sender, EventArgs e) =>
+            TogglePauseSpeaking();
 
         // P1.1: debug capture — _dumpBusy přes Interlocked (nový kód už
         // nepíšeme přes obyčejné booly, viz revize P2.4)
@@ -1064,6 +1086,7 @@ namespace Frtal.LorebookReader {
                 case "secrets of the obscure": return "xp_soto.png";
                 case "janthir wilds":          return "xp_jw.png";
                 case "visions of eternity":    return "xp_voe.png";
+                case "short stories":          return "xp_shortstories.png";
                 default: return null;
             }
         }
@@ -1172,6 +1195,9 @@ namespace Frtal.LorebookReader {
 
         internal LorebookCatalog Catalog => _catalog;
 
+        /// <summary>Kam se ukládají ilustrace stažených povídek.</summary>
+        internal string StoryImageDirectory { get; private set; }
+
         private void ShowEncyclopedia() {
             _encyclopediaView = new EncyclopediaView(this, _parchmentTexture);
             _historyWindow.Show(_encyclopediaView);
@@ -1181,7 +1207,20 @@ namespace Frtal.LorebookReader {
         internal void StopSpeaking() {
             _tts?.Stop();
             _edgeTts?.Stop();
+            _speechPaused = false;
         }
+
+        /// <summary>Pozastaví/obnoví předčítání. Vrací true, když je po
+        /// přepnutí pozastaveno (kvůli popisku tlačítka).</summary>
+        internal bool TogglePauseSpeaking() {
+            bool pause = !_speechPaused;
+            if (pause) { _tts?.Pause(); _edgeTts?.Pause(); }
+            else       { _tts?.Resume(); _edgeTts?.Resume(); }
+            _speechPaused = pause;   // Update podle toho zmrazí i titulky
+            return pause;
+        }
+
+        internal bool SpeechPaused => _speechPaused;
 
         internal void ExportCatalogDialog() {
             try {
@@ -1303,8 +1342,9 @@ namespace Frtal.LorebookReader {
                                 TextCleaner.SanitizeForDisplay(_cues[_cueIndex]);
                             _subtitleDirty = true;
                         }
-                    } else if (_cueIndex < _cues.Count) {
-                        // fallback: odhad rychlosti čtení (bez word eventů / překlad)
+                    } else if (_cueIndex < _cues.Count && !_speechPaused) {
+                        // fallback: odhad rychlosti čtení (bez word eventů / překlad).
+                        // Při pauze se čas nepřičítá, jinak by titulky utekly.
                         _cueElapsedMs += gameTime.ElapsedGameTime.TotalMilliseconds;
                         double cps = 17.0 * Math.Max(0.5, _speakingRate.Value);
                         double dur = Math.Max(700.0, Math.Min(7000.0,
@@ -1438,26 +1478,46 @@ namespace Frtal.LorebookReader {
             }
         }
 
+        private bool _unloaded;
+
+        /// <summary>Jeden krok úklidu — chyba v něm nesmí zastavit zbytek
+        /// ani vyletět ven.</summary>
+        private static void Safe(Action step) {
+            try { step(); } catch { /* při vypínání nás nic nezajímá */ }
+        }
+
+        /// <summary>Úklid modulu. MUSÍ být idempotentní a nesmí vyhodit
+        /// výjimku: při AKTUALIZACI modulu Blish tenhle úklid dovolá až z
+        /// finalizeru (GC vlákno), kdy už nemusí jít načíst NAudio ani jiné
+        /// závislosti — neodchycená výjimka z finalizeru shodí celý Blish
+        /// (crash 26.7.2026 při každém updatu).</summary>
         protected override void Unload() {
-            _encyclopediaView?.FlushEdits(); // neztrať rozeditovaný text
-            _readKeybind.Value.Activated -= OnReadActivated;
-            _stopKeybind.Value.Activated -= OnStopActivated;
-            _convToggleKeybind.Value.Activated -= OnConvToggleActivated;
-            _debugDumpKeybind.Value.Activated -= OnDebugDumpActivated;
-            _calibrateKeybind.Value.Activated -= OnCalibrateActivated;
-            _bookCalibrateKeybind.Value.Activated -= OnBookCalibrateActivated;
-            _calibrator?.Dispose();
-            _speakerButton?.Dispose();
-            _saveButton?.Dispose();
-            _appendButton?.Dispose();
-            _subtitleLabel?.Dispose();
-            _cornerIcon?.Dispose();
-            _textRenderer?.Dispose();
-            _historyWindow?.Dispose();
-            _tts?.Dispose();
-            _edgeTts?.Dispose();
-            foreach (var t in _xpIconCache.Values) t?.Dispose();
-            _xpIconCache.Clear();
+            if (_unloaded) return;
+            _unloaded = true;
+
+            Safe(() => _encyclopediaView?.FlushEdits()); // neztrať rozepsané
+            Safe(() => _readKeybind.Value.Activated -= OnReadActivated);
+            Safe(() => _stopKeybind.Value.Activated -= OnStopActivated);
+            Safe(() => _pauseKeybind.Value.Activated -= OnPauseActivated);
+            Safe(() => _convToggleKeybind.Value.Activated -= OnConvToggleActivated);
+            Safe(() => _debugDumpKeybind.Value.Activated -= OnDebugDumpActivated);
+            Safe(() => _calibrateKeybind.Value.Activated -= OnCalibrateActivated);
+            Safe(() => _bookCalibrateKeybind.Value.Activated -= OnBookCalibrateActivated);
+            Safe(() => _calibrator?.Dispose());
+            Safe(() => _speakerButton?.Dispose());
+            Safe(() => _saveButton?.Dispose());
+            Safe(() => _appendButton?.Dispose());
+            Safe(() => _subtitleLabel?.Dispose());
+            Safe(() => _cornerIcon?.Dispose());
+            Safe(() => _textRenderer?.Dispose());
+            Safe(() => _historyWindow?.Dispose());
+            Safe(() => _tts?.Dispose());
+            Safe(() => _edgeTts?.Dispose());
+            Safe(() => {
+                foreach (var t in _xpIconCache.Values) t?.Dispose();
+                _xpIconCache.Clear();
+            });
+            Safe(BookReaderPanel.ClearImageCache);
         }
     }
 }

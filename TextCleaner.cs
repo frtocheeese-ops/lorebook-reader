@@ -91,6 +91,23 @@ namespace Frtal.LorebookReader {
             return shortLines >= lines.Count * 0.5;
         }
 
+        /// <summary>Vyhodí to, co se nemá číst nahlas ani objevit v titulcích:
+        /// značky ilustrací (⟦IMG:soubor⟧), ozdobné oddělovače („· · ·")
+        /// a odkazy — hlas by je jinak předčítal znak po znaku.
+        /// Uložený text zůstává nedotčený, tohle je jen pro TTS.</summary>
+        private static string StripNonSpeech(string text) {
+            text = Regex.Replace(text, @"⟦IMG:[^⟧]*⟧", " ");
+            text = Regex.Replace(text, @"https?://\S+", " ");
+            var keep = new System.Collections.Generic.List<string>();
+            foreach (string line in text.Replace("\r", "").Split('\n')) {
+                string t = line.Trim();
+                // řádek bez jediného písmene/číslice = dekorace
+                if (t.Length > 0 && !Regex.IsMatch(t, @"[\p{L}\p{Nd}]")) continue;
+                keep.Add(line);
+            }
+            return string.Join("\n", keep);
+        }
+
         /// <summary>Společné inline čištění spojeného textu (záměny znaků,
         /// |→I, OCR uvozovky) — bez strukturálních zásahů (řádky/odstavce/konec).</summary>
         private static string CleanInline(string text) {
@@ -302,6 +319,10 @@ namespace Frtal.LorebookReader {
         /// </summary>
         public static System.Collections.Generic.List<string> SplitChunks(
                 string text, int maxLen = 200) {
+            if (string.IsNullOrWhiteSpace(text))
+                return new System.Collections.Generic.List<string>();
+
+            text = StripNonSpeech(text);
             if (string.IsNullOrWhiteSpace(text))
                 return new System.Collections.Generic.List<string>();
 

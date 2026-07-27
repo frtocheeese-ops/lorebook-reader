@@ -62,6 +62,22 @@ namespace Frtal.LorebookReader {
 
         private CancellationTokenSource _cts;
         private WaveOutEvent _currentOut;
+        // viz TtsService: s pauzou musí stát i hodiny pro sync titulků
+        private System.Diagnostics.Stopwatch _currentClock;
+
+        public bool IsPaused { get; private set; }
+
+        public void Pause() {
+            try { _currentOut?.Pause(); } catch { /* ignore */ }
+            try { _currentClock?.Stop(); } catch { /* ignore */ }
+            IsPaused = true;
+        }
+
+        public void Resume() {
+            try { _currentOut?.Play(); } catch { /* ignore */ }
+            try { _currentClock?.Start(); } catch { /* ignore */ }
+            IsPaused = false;
+        }
 
         static EdgeTtsService() {
             System.Net.ServicePointManager.SecurityProtocol |=
@@ -104,13 +120,16 @@ namespace Frtal.LorebookReader {
         }
 
         public void Stop() {
+            IsPaused = false;
             try { _cts?.Cancel(); } catch { /* ignore */ }
             try { _currentOut?.Stop(); } catch { /* ignore */ }
         }
 
+        /// <summary>Viz TtsService.Dispose — při aktualizaci modulu běží
+        /// úklid z finalizeru, kdy už NAudio nemusí být načitatelné.</summary>
         public void Dispose() {
-            Stop();
-            _currentOut?.Dispose();
+            try { Stop(); } catch { /* shutting down */ }
+            try { _currentOut?.Dispose(); } catch { /* NAudio už nemusí být */ }
         }
 
         // ------------------------ syntéza jedné dávky ------------------------
@@ -228,6 +247,8 @@ namespace Frtal.LorebookReader {
                 output.Init(reader);
                 output.Play();
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                _currentClock = sw;
+                if (IsPaused) { output.Pause(); sw.Stop(); }
                 int wi = 0;
                 using (ct.Register(() => {
                            try { output.Stop(); } catch { /* ignore */ }
@@ -245,6 +266,7 @@ namespace Frtal.LorebookReader {
                     }
                 }
                 _currentOut = null;
+                _currentClock = null;
             }
         }
 

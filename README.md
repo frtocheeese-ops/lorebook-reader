@@ -105,6 +105,14 @@ grimoire:
 Access the encyclopedia by clicking the **book icon** in the top-left
 Blish HUD icon bar.
 
+### ✦ Official short stories
+The codex has a **Short Stories** section listing the short stories ArenaNet
+published outside the game. Pick a title and the module downloads it from the
+[Guild Wars 2 Wiki](https://wiki.guildwars2.com/wiki/Short_story) — text,
+illustrations, writer and timeline placement, with a link back to the source.
+The stories are not shipped with the module; each one is fetched only when you
+ask for it, and is then yours to read offline.
+
 ### 🗣️ Voice Options
 Two voice engines are available:
 
@@ -199,6 +207,7 @@ and TTS** → Settings (gear icon).
 |---------|---------|-------------|
 | Read lorebook | `Ctrl+Alt+R` | Captures and reads the open lorebook or dialogue |
 | Stop reading | `Ctrl+Alt+S` | Stops current TTS playback |
+| Pause / resume reading | `Ctrl+Alt+P` | Pauses narration and picks it up where it stopped |
 | Toggle conversation capture | `Ctrl+Alt+C` | Turn NPC-dialogue detection on/off |
 | Calibrate dialogue zone | `Ctrl+Alt+Z` | Mark where dialogue text appears (once per resolution) |
 | Calibrate lorebook OCR area | `Ctrl+Alt+B` | Mark the book text area if OCR cuts text off (once per resolution) |
@@ -266,6 +275,11 @@ capture and OCR overlay, which is permitted by ArenaNet's Terms of
 Service.
 
 ## Known Issues
+
+Text with a **strikethrough** line is usually dropped. The line runs through
+the letters and Windows' OCR engine can no longer recognise them, so the words
+never reach the module. Retype those passages in the editor if you need them.
+
 As the module checks for a specific pattern and brightness marks, 
 it may occur that the three buttons appear on some surfaces similiar to the parchment texture.
 However, since the scan is performed in a matter of seconds it shouldn't be very noticable.
