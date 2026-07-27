@@ -373,7 +373,7 @@ namespace Frtal.LorebookReader {
             var winTex = GetRefTexture("window_bg.png");
             if (winTex != null) {
                 int tw = winTex.Width, th = winTex.Height;
-                _historyWindow = new StandardWindow(
+                _historyWindow = new CodexWindow(
                     winTex,
                     new Microsoft.Xna.Framework.Rectangle(0, 0, tw, th),
                     new Microsoft.Xna.Framework.Rectangle(
@@ -392,7 +392,7 @@ namespace Frtal.LorebookReader {
                     Id            = "frtal_lorebook_reader_encyclopedia_v2"
                 };
             } else {
-                _historyWindow = new StandardWindow(
+                _historyWindow = new CodexWindow(
                     GameService.Content.DatAssetCache.GetTextureFromAssetId(155985),
                     new Microsoft.Xna.Framework.Rectangle(40, 26, 913, 691),
                     new Microsoft.Xna.Framework.Rectangle(70, 71, 839, 605),

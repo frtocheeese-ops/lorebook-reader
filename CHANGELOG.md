@@ -5,60 +5,54 @@ This project follows [Semantic Versioning](https://semver.org).
 
 ## 0.8.3 — 2026-07-26
 
-### Fixed
-- **Clicking in the text editor no longer crashes Blish HUD.** Every book has
-  a blank line between paragraphs, and clicking one could take the overlay
-  down. Blank lines now carry an invisible placeholder while you edit; the
-  saved text is unchanged.
-- **The window no longer shrinks its maximum width after the first resize.**
+Short stories from the wiki, pause for the narrator, and a batch of crash
+fixes reported after 0.8.0.
+
+**Please note:** installing this update may crash Blish HUD one last time. The
+faulty shutdown lives in the version you are updating *from*, so it cannot be
+fixed retroactively — just restart Blish HUD and you are on the fixed version.
+Updates from here on will be clean.
 
 ### Added
-- **Pause.** Narration can be paused and picked up where it stopped, from the
-  book view, the full-window reader, or a keybind (default `Ctrl+Alt+P`).
-  Subtitles hold their place while paused.
-- **Illustrations in short stories.** Pictures from the wiki page are
-  downloaded alongside the text and drawn in the book where they belong.
 - **Official short stories.** A new "Short Stories" section in the expansion
   rail lists all 30 short stories ArenaNet published outside the game. Pick a
   title and it is downloaded from the Guild Wars 2 Wiki into your codex — text,
   illustrations, the writer, its placement in the timeline, and a link back to
   the source. Nothing is bundled with the module; a story is fetched only when
   you ask for it, and stays in your codex to read offline afterwards.
+- **Pause.** Narration can be paused and picked up where it stopped, from the
+  book view, the full-window reader, or a keybind (default `Ctrl+Alt+P`).
+  Subtitles hold their place while paused.
 - Play and Stop buttons while reading a book full-window.
+
+### Fixed
+- **Updating the module no longer crashes Blish HUD.** Shutting the module down
+  during an update could fail while releasing the audio player, and that
+  failure took the whole overlay with it.
+- **Editing no longer crashes Blish HUD.** Two separate cases are gone:
+  pressing Backspace right after Enter, and clicking a blank line between
+  paragraphs. Your saved text is unchanged either way.
+- **Your library is no longer lost after a crash.** If `catalog.json` goes
+  missing or comes back empty after an unclean shutdown, the module restores
+  your books from its own backup instead of starting with an empty codex
+  (which previously overwrote the backup as well). A note explains what was
+  recovered.
+- **Poems, songs and lists keep their line breaks.** Verse used to be reflowed
+  into a solid paragraph, and a short line could even be mistaken for a bold
+  heading. Line breaks you type in the editor are respected too.
+- **The codex window can be stretched as large as your screen.** Blish HUD's
+  default window caps resizing at 1024 px, which made the codex cramped on big
+  monitors.
 
 ### Changed
 - Expansion logos on cover pages are no longer tilted.
+- The narrator skips over illustrations, dividers and links instead of reading
+  out file names and web addresses.
 
-## 0.8.2 — 2026-07-26
-
-### Fixed
-- **Updating the module no longer crashes Blish HUD.** Shutting the module
-  down during an update could fail while releasing the audio player, and that
-  failure took the whole overlay with it. Shutdown is now fully guarded, so an
-  update finishes cleanly.
-
-  **Please note:** installing *this* update may still crash Blish HUD one last
-  time, because the faulty shutdown lives in the version you are updating
-  from. Simply restart Blish HUD and you are on the fixed version — updates
-  from here on will be clean.
-
-## 0.8.1 — 2026-07-24
-
-### Fixed
-- **Pressing Backspace right after Enter no longer crashes Blish HUD.** The
-  editor resized its text box while the text control was still processing the
-  change, which could take the whole overlay down. The resize now happens on
-  the next frame instead.
-- **Poems, songs and lists keep their line breaks.** Verse used to be reflowed
-  into a solid paragraph (and a short line could even be mistaken for a bold
-  heading). Books whose lines deliberately stop short of the margin now keep
-  their shape, and a line break you type in the editor is respected instead of
-  being merged away.
-- **Your library is no longer lost after a crash.** If `catalog.json` goes
-  missing or comes back empty after an unclean shutdown, the module now
-  restores your books from its own backup file instead of starting with an
-  empty codex (which previously overwrote the backup as well). A note explains
-  what was recovered.
+### Known issue
+- Text with a strikethrough is usually dropped: the line through the letters
+  stops Windows' OCR from recognising them. Retype those passages in the editor
+  if you need them.
 
 ## 0.8.0 — 2026-07-18
 
