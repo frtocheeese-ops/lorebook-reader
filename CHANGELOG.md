@@ -3,7 +3,7 @@
 All notable changes to Lorebook Codex and TTS are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
-## 0.8.3 — 2026-07-26
+## 0.8.4 — 2026-07-26
 
 Short stories from the wiki, pause for the narrator, and a batch of crash
 fixes reported after 0.8.0.
