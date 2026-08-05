@@ -49,11 +49,14 @@ namespace Frtal.LorebookReader {
         private SettingEntry<KeyBinding> _bookCalibrateKeybind;
         private SettingEntry<bool>       _encRailCollapsed;    // rail encyklopedie jen ikony
         private SettingEntry<KeyBinding> _pauseKeybind;
+        private SettingEntry<KeyBinding> _bookToggleKeybind;
         private volatile bool            _speechPaused;
 
         // přístup pro LorebookSettingsView
         internal SettingEntry<KeyBinding> ReadKeybindSetting       => _readKeybind;
         internal SettingEntry<KeyBinding> StopKeybindSetting       => _stopKeybind;
+        internal SettingEntry<KeyBinding> PauseKeybindSetting      => _pauseKeybind;
+        internal SettingEntry<KeyBinding> BookToggleKeybindSetting => _bookToggleKeybind;
         internal SettingEntry<bool>       ShowSpeakerButtonSetting => _showSpeakerButton;
         internal SettingEntry<string>     VoiceNameSetting         => _voiceName;
         internal SettingEntry<float>      SpeakingRateSetting      => _speakingRate;
@@ -160,6 +163,13 @@ namespace Frtal.LorebookReader {
                 new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.P),
                 () => "Pause / resume reading",
                 () => "Pauses the narration and picks it up where it stopped.");
+
+            _bookToggleKeybind = settings.DefineSetting(
+                "BookToggleKeybind",
+                new KeyBinding(ModifierKeys.Ctrl | ModifierKeys.Alt, Keys.L),
+                () => "Toggle lorebook detection",
+                () => "Turns the buttons on open lorebooks on and off, the same "
+                    + "way Ctrl+Alt+C toggles NPC dialogue capture.");
 
             _showSpeakerButton = settings.DefineSetting(
                 "ShowSpeakerButton", true,
@@ -308,6 +318,8 @@ namespace Frtal.LorebookReader {
             _stopKeybind.Value.Activated += OnStopActivated;
             _pauseKeybind.Value.Enabled = true;
             _pauseKeybind.Value.Activated += OnPauseActivated;
+            _bookToggleKeybind.Value.Enabled = true;
+            _bookToggleKeybind.Value.Activated += OnBookToggleActivated;
             _convToggleKeybind.Value.Enabled = true;
             _convToggleKeybind.Value.Activated += OnConvToggleActivated;
             _debugDumpKeybind.Value.Enabled = true;
@@ -454,6 +466,18 @@ namespace Frtal.LorebookReader {
 
         private void OnPauseActivated(object sender, EventArgs e) =>
             TogglePauseSpeaking();
+
+        /// <summary>Zapne/vypne hledání lorebooků — stejně jako Ctrl+Alt+C
+        /// u dialogů. Kdo nechce tlačítka vyskakující na podobných texturách,
+        /// nechá detekci vypnutou a zapne ji, až knihu otevře.</summary>
+        private void OnBookToggleActivated(object sender, EventArgs e) {
+            bool on = !_showSpeakerButton.Value;
+            _showSpeakerButton.Value = on;
+            if (!on) { _bookVisible = false; }
+            ScreenNotification.ShowNotification(on
+                ? "Lorebook detection on"
+                : "Lorebook detection off");
+        }
 
         // P1.1: debug capture — _dumpBusy přes Interlocked (nový kód už
         // nepíšeme přes obyčejné booly, viz revize P2.4)
@@ -1499,6 +1523,7 @@ namespace Frtal.LorebookReader {
             Safe(() => _readKeybind.Value.Activated -= OnReadActivated);
             Safe(() => _stopKeybind.Value.Activated -= OnStopActivated);
             Safe(() => _pauseKeybind.Value.Activated -= OnPauseActivated);
+            Safe(() => _bookToggleKeybind.Value.Activated -= OnBookToggleActivated);
             Safe(() => _convToggleKeybind.Value.Activated -= OnConvToggleActivated);
             Safe(() => _debugDumpKeybind.Value.Activated -= OnDebugDumpActivated);
             Safe(() => _calibrateKeybind.Value.Activated -= OnCalibrateActivated);

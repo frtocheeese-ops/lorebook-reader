@@ -3,6 +3,33 @@
 All notable changes to Lorebook Codex and TTS are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## 0.8.5 — 2026-07-27
+
+### Added
+- **Search terms are highlighted inside the book.** Open a book from a search
+  and the matches are marked on the page — the reader also jumps straight to
+  the first page that contains the term, which saves a lot of page turning in
+  the longer short stories.
+- **Lorebook detection can be toggled** with a keybind (default `Ctrl+Alt+L`),
+  the same way `Ctrl+Alt+C` toggles NPC dialogue capture. Leave it off if the
+  buttons bother you on parchment-like surfaces, and switch it on when you
+  open a book.
+
+### Changed
+- **Bigger interface.** Expansion icons, book titles and the list rows are
+  larger, so the codex stays readable at 1440p and above.
+- Search matches are highlighted in a much stronger yellow.
+
+### Fixed
+- The pause and lorebook-detection keybinds can now be rebound in the module
+  settings.
+- The explanation on the short story download screen was clipped at the top
+  and bottom; it now sizes itself to the text and scrolls if the window is
+  small.
+- A freshly saved book could appear twice in the list until you clicked it.
+- Book counts in the expansion rail were clipped at three digits.
+- Illustrations can no longer overflow a page.
+
 ## 0.8.4 — 2026-07-26
 
 Short stories from the wiki, pause for the narrator, and a batch of crash

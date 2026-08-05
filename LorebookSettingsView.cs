@@ -48,6 +48,14 @@ namespace Frtal.LorebookReader {
                 KeyBindingName = "Stop reading",
                 Parent         = panel
             };
+            new KeybindingAssigner(_module.PauseKeybindSetting.Value) {
+                KeyBindingName = "Pause / resume reading",
+                Parent         = panel
+            };
+            new KeybindingAssigner(_module.BookToggleKeybindSetting.Value) {
+                KeyBindingName = "Toggle lorebook detection",
+                Parent         = panel
+            };
 
             // --- ikona reproduktoru ---
             var speakerCheckbox = new Checkbox {

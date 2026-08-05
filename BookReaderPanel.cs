@@ -225,6 +225,40 @@ namespace Frtal.LorebookReader {
             }
         }
 
+        private string _highlight;
+        /// <summary>Hledaný výraz — ve stránkách se podbarví, aby šlo najít
+        /// zmínku i ve dvacetistránkové povídce.</summary>
+        public string Highlight {
+            get => _highlight;
+            set {
+                string v = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+                if (_highlight == v) return;
+                _highlight = v;
+                Invalidate();
+            }
+        }
+
+        /// <summary>Číslo první stránky (1..N) s hledaným výrazem, jinak 0.</summary>
+        public int FirstPageWith(string needle) {
+            if (string.IsNullOrWhiteSpace(needle)) return 0;
+            for (int p = 0; p < _pages.Count; p++)
+                foreach (var ln in _pages[p])
+                    if (!string.IsNullOrEmpty(ln.Text)
+                        && ln.Text.IndexOf(needle,
+                               StringComparison.OrdinalIgnoreCase) >= 0)
+                        return p + 1;
+            return 0;
+        }
+
+        /// <summary>Otevře stránku (0 = obálka).</summary>
+        public void GoToPage(int page) {
+            if (page < 0 || page > _pages.Count) return;
+            _turning = false;
+            _page = page;
+            UpdateButtons();
+            Invalidate();
+        }
+
         public float FontSize {
             get => _fontSize;
             set {
@@ -289,12 +323,15 @@ namespace Frtal.LorebookReader {
                           - ShortStoryLibrary.ImageSuffix.Length);
                     var tex = LoadImage(file);
                     if (tex == null) continue;
-                    // vejít se na šířku i do ~55 % výšky stránky
+                    // vejít se na šířku i do ~55 % výšky stránky; strop 90 %
+                    // je pojistka, aby ani velká ilustrace nepřetekla stránku
+                    // a neuřízla se nahoře/dole (26.7.2026)
                     float scale = Math.Min(
                         (float)wrapW / tex.Width,
                         availH * 0.55f / tex.Height);
                     if (scale > 1f) scale = 1f;
                     int ih = Math.Max(1, (int)(tex.Height * scale));
+                    if (ih > availH * 0.9f) ih = (int)(availH * 0.9f);
                     if (used + ih + gapH > availH && cur.Count > 0) {
                         _pages.Add(cur); cur = new List<Line>(); used = 0;
                     }
@@ -502,6 +539,10 @@ namespace Frtal.LorebookReader {
                     : _tr.LineHeight(_fontSize);
                 if (ln.Gap) y += _tr.LineHeight(_fontSize) * 0.55f;
                 if (ln.Text.Length > 0) {
+                    float fs = ln.Head ? _fontSize + 2 : _fontSize;
+                    // podbarvení hledaného výrazu — kreslí se POD text
+                    PaintHighlights(sb, bounds, page, f, anchorLeft,
+                                    ln, fs, y, lh);
                     var tex = ln.Head
                         ? _tr.RenderLine(ln.Text, _fontSize + 2, HeadInk, bold: true)
                         : _tr.RenderLine(ln.Text, _fontSize, InkColor);
@@ -513,6 +554,33 @@ namespace Frtal.LorebookReader {
                     }
                 }
                 y += lh;
+            }
+        }
+
+        /// <summary>Podbarví všechny výskyty hledaného výrazu na řádku.
+        /// Šířku předsazeného textu i shody měří stejným fontem, jakým se
+        /// řádek kreslí, takže obdélník sedí přesně pod slovem.</summary>
+        private void PaintHighlights(SpriteBatch sb, Rectangle bounds,
+                                     Rectangle page, float f, bool anchorLeft,
+                                     Line ln, float fs, float y, float lh) {
+            if (string.IsNullOrEmpty(_highlight)) return;
+            int from = 0;
+            while (true) {
+                int hit = ln.Text.IndexOf(_highlight, from,
+                    StringComparison.OrdinalIgnoreCase);
+                if (hit < 0) break;
+                float pre = _tr.MeasureWidth(ln.Text.Substring(0, hit),
+                                             fs, bold: ln.Head);
+                float wide = _tr.MeasureWidth(
+                    ln.Text.Substring(hit, _highlight.Length), fs, bold: ln.Head);
+                float x = bounds.X + PadX + pre;
+                int dx = SqueezeX(bounds, page, f, anchorLeft, x);
+                // sytá „zvýrazňovačová" žlutá — na pergamenu musí být vidět
+                sb.DrawOnCtrl(this, ContentService.Textures.Pixel,
+                    new Rectangle(dx, (int)y - 1,
+                                  Math.Max(2, (int)(wide * f)), (int)lh),
+                    new Color(255, 214, 41) * 0.85f);
+                from = hit + _highlight.Length;
             }
         }
 

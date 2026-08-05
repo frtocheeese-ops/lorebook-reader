@@ -1,6 +1,6 @@
 {
   "name": "Lorebook Codex and TTS",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "namespace": "vrae.lorebook_reader",
   "package": "LorebookReader.dll",
   "manifest_version": 1,

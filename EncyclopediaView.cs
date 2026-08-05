@@ -39,6 +39,7 @@ namespace Frtal.LorebookReader {
         private LorebookEntry _selected;
         private float _textFontSize = 18f;
         private bool _readerFullscreen; // kniha přes celé okno (bez railu/seznamu)
+        private string _lastSearch;     // hledaný výraz pro zvýraznění v knize
 
         // debounce ukládání editoru: text se do disku nezapisuje při každém
         // stisku klávesy (to zamrzávalo Blish), ale ~1,2 s po poslední změně
@@ -92,7 +93,8 @@ namespace Frtal.LorebookReader {
                 return;
             }
             bool railMini = _module.EncyclopediaRailCollapsedSetting.Value;
-            int railW = railMini ? 54 : 236; // expanded: vejde se i „Secrets of the Obscure"
+            // větší rail i písmo — na 1440p bylo původní příliš drobné
+            int railW = railMini ? 64 : 268;
             int listX = 8 + railW + 8;
             int leftW = Math.Max(250, (int)((totalW - railW) * 0.40f));
 
@@ -226,9 +228,10 @@ namespace Frtal.LorebookReader {
         private int AddRailRow(int y, int rowW, bool mini, string value,
                                string label, string code, int count) {
             bool active = _filterXp == value;
+            const int RowH = 46, IconS = 34;   // zvětšeno kvůli 1440p+
             var row = new Panel {
                 Parent = _railPanel, Location = new Point(4, y),
-                Width = rowW, Height = 38,
+                Width = rowW, Height = RowH,
                 BackgroundColor = active
                     ? new Color(60, 70, 90) : Color.Transparent,
                 BasicTooltipText = $"{label} ({count})"
@@ -241,34 +244,39 @@ namespace Frtal.LorebookReader {
             if (icon != null) {
                 new Blish_HUD.Controls.Image(icon) {
                     Parent = row,
-                    Location = new Point(mini ? (rowW - 26) / 2 : 6, 6),
-                    Size = new Point(26, 26)
+                    Location = new Point(mini ? (rowW - IconS) / 2 : 6,
+                                         (RowH - IconS) / 2),
+                    Size = new Point(IconS, IconS)
                 };
-                tx = 38;
+                tx = IconS + 12;
             } else {
                 new Label {
                     Parent = row,
-                    Location = new Point(mini ? 0 : 5, 10),
-                    Width = mini ? rowW : 32, Height = 18,
+                    Location = new Point(mini ? 0 : 6, (RowH - 22) / 2),
+                    Width = mini ? rowW : IconS + 2, Height = 22,
                     Text = code,
                     HorizontalAlignment = mini
                         ? HorizontalAlignment.Center : HorizontalAlignment.Left,
-                    Font = GameService.Content.DefaultFont14
+                    Font = GameService.Content.DefaultFont16
                 };
-                tx = 40;
+                tx = IconS + 14;
             }
             if (!mini) {
+                // počet vpravo potřebuje víc místa — u trojciferných čísel se
+                // dřív ořezával (26.7.2026)
+                const int countW = 46;
                 new Label {
-                    Parent = row, Location = new Point(tx, 10),
-                    Width = rowW - tx - 28, Height = 18, Text = label,
-                    Font = GameService.Content.DefaultFont14
+                    Parent = row, Location = new Point(tx, (RowH - 22) / 2),
+                    Width = rowW - tx - countW - 6, Height = 22, Text = label,
+                    Font = GameService.Content.DefaultFont16
                 };
                 new Label {
-                    Parent = row, Location = new Point(rowW - 28, 10),
-                    Width = 26, Height = 18, Text = count.ToString(),
+                    Parent = row, Location = new Point(rowW - countW - 4,
+                                                       (RowH - 22) / 2),
+                    Width = countW, Height = 22, Text = count.ToString(),
                     HorizontalAlignment = HorizontalAlignment.Right,
-                    TextColor = new Color(160, 160, 160),
-                    Font = GameService.Content.DefaultFont14
+                    TextColor = new Color(170, 170, 170),
+                    Font = GameService.Content.DefaultFont16
                 };
             }
             row.MouseEntered += (s, e) => {
@@ -282,7 +290,7 @@ namespace Frtal.LorebookReader {
                 FillRail();
                 RefreshList();
             };
-            return y + 42;
+            return y + RowH + 4;
         }
 
         private SortMode CurrentSort() {
@@ -300,6 +308,9 @@ namespace Frtal.LorebookReader {
             // (jeho reference je navíc už disposnutá). Změny se promítnou
             // při návratu, kdy BuildLayout seznam postaví znovu.
             if (_listPanel == null || _mode == DetailMode.Edit) return;
+            // ClearChildren samo občas nechá staré řádky viset o snímek déle
+            // (kniha se pak v seznamu ukázala dvakrát) — uvolnit napevno
+            foreach (var old in _listPanel.Children.ToList()) old.Dispose();
             _listPanel.ClearChildren();
             var results = _catalog.Query(
                 _searchBox?.Text, CurrentSort(),
@@ -352,9 +363,12 @@ namespace Frtal.LorebookReader {
             else { _selected = null; ShowEmpty(); }
         }
 
+        private const int ListRowH = 58;   // vyšší řádek = větší písmo i ikona
+
         private void AddListRow(LorebookEntry entry) {
             var row = new Panel {
-                Parent = _listPanel, Width = _listPanel.Width - 20, Height = 46,
+                Parent = _listPanel, Width = _listPanel.Width - 20,
+                Height = ListRowH,
                 ShowBorder = false,
                 BackgroundColor = (_selected != null && _selected.Id == entry.Id)
                     ? new Color(60, 70, 90) : Color.Transparent
@@ -370,13 +384,14 @@ namespace Frtal.LorebookReader {
             var (cr, cg, cb) = Palette.Resolve(entry.ColorTag);
             new Panel {
                 Parent = row, Location = new Point(0, 0),
-                Width = 5, Height = 46, BackgroundColor = new Color(cr, cg, cb)
+                Width = 6, Height = ListRowH,
+                BackgroundColor = new Color(cr, cg, cb)
             };
             if (!entry.Opened) {
                 // „unread glow": zlatě pulzující hřbet, dokud knihu neotevřeš
                 var glow = new Panel {
                     Parent = row, Location = new Point(0, 0),
-                    Width = 5, Height = 46,
+                    Width = 6, Height = ListRowH,
                     BackgroundColor = new Color(233, 201, 106)
                 };
                 var tween = GameService.Animation.Tweener
@@ -384,36 +399,37 @@ namespace Frtal.LorebookReader {
                     .Repeat().Reflect();
                 glow.Disposed += (s, e) => tween.Cancel();
             }
-            int titleX = 12;
+            int titleX = 14;
             var xpIcon = _module.GetExpansionIcon(entry.Expansion);
             if (xpIcon != null) {
                 new Blish_HUD.Controls.Image(xpIcon) {
-                    Parent = row, Location = new Point(10, 13),
-                    Size = new Point(20, 20)
+                    Parent = row, Location = new Point(12, 15),
+                    Size = new Point(28, 28)
                 };
-                titleX = 34;
+                titleX = 46;
             }
             new Label {
-                Parent = row, Location = new Point(titleX, 4),
-                Width = row.Width - titleX - (entry.Opened ? 8 : 46), Height = 22,
-                Text = entry.DisplayTitle, Font = GameService.Content.DefaultFont16
+                Parent = row, Location = new Point(titleX, 6),
+                Width = row.Width - titleX - (entry.Opened ? 8 : 54), Height = 26,
+                Text = entry.DisplayTitle, Font = GameService.Content.DefaultFont18
             };
             if (!entry.Opened) {
                 new Label {
-                    Parent = row, Location = new Point(row.Width - 42, 5),
-                    Width = 36, Height = 16, Text = "NEW",
+                    Parent = row, Location = new Point(row.Width - 50, 8),
+                    Width = 44, Height = 20, Text = "NEW",
                     HorizontalAlignment = HorizontalAlignment.Right,
                     TextColor = new Color(233, 201, 106),
-                    Font = GameService.Content.DefaultFont12
+                    Font = GameService.Content.DefaultFont14
                 };
             }
             string meta = entry.MetadataLine;
             new Label {
-                Parent = row, Location = new Point(titleX, 26),
-                Width = row.Width - titleX - 8, Height = 16,
+                Parent = row, Location = new Point(titleX, 32),
+                Width = row.Width - titleX - 8, Height = 20,
                 Text = string.IsNullOrEmpty(meta)
                     ? entry.TimestampLocal.ToString("g") : meta,
-                TextColor = new Color(160, 160, 160)
+                TextColor = new Color(165, 165, 165),
+                Font = GameService.Content.DefaultFont14
             };
             row.Click += (s, e) => {
                 _selected = entry;
@@ -427,25 +443,25 @@ namespace Frtal.LorebookReader {
         /// <summary>Řádek dosud nestažené povídky v seznamu.</summary>
         private void AddStoryRow(ShortStory story) {
             var row = new Panel {
-                Parent = _listPanel, Width = _listPanel.Width - 20, Height = 46,
-                BackgroundColor = Color.Transparent
+                Parent = _listPanel, Width = _listPanel.Width - 20,
+                Height = ListRowH, BackgroundColor = Color.Transparent
             };
             row.MouseEntered += (s, e) =>
                 row.BackgroundColor = new Color(48, 54, 66);
             row.MouseLeft += (s, e) => row.BackgroundColor = Color.Transparent;
 
             new Label {
-                Parent = row, Location = new Point(12, 4),
-                Width = row.Width - 20, Height = 22, Text = story.Title,
-                Font = GameService.Content.DefaultFont16,
+                Parent = row, Location = new Point(14, 6),
+                Width = row.Width - 22, Height = 26, Text = story.Title,
+                Font = GameService.Content.DefaultFont18,
                 TextColor = new Color(190, 190, 190)
             };
             new Label {
-                Parent = row, Location = new Point(12, 26),
-                Width = row.Width - 20, Height = 16,
+                Parent = row, Location = new Point(14, 32),
+                Width = row.Width - 22, Height = 20,
                 Text = "Not downloaded · " + story.Timeline,
-                TextColor = new Color(140, 140, 140),
-                Font = GameService.Content.DefaultFont12
+                TextColor = new Color(145, 145, 145),
+                Font = GameService.Content.DefaultFont14
             };
             row.Click += (s, e) => ShowStoryOffer(story);
         }
@@ -480,17 +496,36 @@ namespace Frtal.LorebookReader {
                 Width = w - 170, Height = 20, Text = "",
                 TextColor = new Color(170, 200, 170)
             };
-            var why = new Label {
-                Parent = _detailPanel, Location = new Point(12, 112),
-                Width = w - 24, Height = 130, WrapText = true,
+            // vysvětlení do scrollovatelného panelu s automatickou výškou —
+            // pevná výška text ořezávala nahoře i dole (26.7.2026)
+            var whyBox = new FlowPanel {
+                Parent = _detailPanel, Location = new Point(12, 116),
+                Width = w - 24,
+                Height = Math.Max(60, _detailPanel.Height - 128),
+                FlowDirection = ControlFlowDirection.SingleTopToBottom,
+                ControlPadding = new Vector2(0, 8), CanScroll = true
+            };
+            new Label {
+                Parent = whyBox, Width = whyBox.Width - 20,
+                AutoSizeHeight = true, Text = "Why isn't this already here?",
+                Font = GameService.Content.DefaultFont16,
+                TextColor = new Color(200, 200, 200)
+            };
+            new Label {
+                Parent = whyBox, Width = whyBox.Width - 20,
+                AutoSizeHeight = true, WrapText = true,
                 TextColor = new Color(160, 160, 160),
-                Text = "Why isn't this already here?\n\n"
-                     + "The short stories were written and published by "
+                Text = "The short stories were written and published by "
                      + "ArenaNet, so the module does not ship copies of them. "
                      + "Instead it fetches this one from the Guild Wars 2 Wiki "
                      + "when you ask for it, and stores it in your own codex "
-                     + "together with a link back to the source.\n\n"
-                     + "You need an internet connection for this step only — "
+                     + "together with a link back to the source."
+            };
+            new Label {
+                Parent = whyBox, Width = whyBox.Width - 20,
+                AutoSizeHeight = true, WrapText = true,
+                TextColor = new Color(160, 160, 160),
+                Text = "You need an internet connection for this step only — "
                      + "once downloaded, the story is yours to read offline."
             };
 
@@ -677,6 +712,14 @@ namespace Frtal.LorebookReader {
             };
             reader.SetEntry(entry, body,
                 _module.GetExpansionStampIcon(entry.Expansion));
+            // hledaný výraz podbarvit a rovnou otevřít stránku, kde je
+            string needle = _searchBox?.Text ?? _lastSearch;
+            _lastSearch = needle;
+            if (!string.IsNullOrWhiteSpace(needle)) {
+                reader.Highlight = needle;
+                int hitPage = reader.FirstPageWith(needle.Trim());
+                if (hitPage > 0) reader.GoToPage(hitPage);
+            }
             reader.FullscreenToggled += (s, e) => {
                 _readerFullscreen = true;
                 BuildLayout();
@@ -920,6 +963,7 @@ namespace Frtal.LorebookReader {
             };
             reader.SetEntry(_selected, BuildBody(_selected),
                 _module.GetExpansionStampIcon(_selected.Expansion));
+            reader.Highlight = _lastSearch;   // zvýraznění drží i ve fullscreenu
             reader.IsFullscreen = true;
             reader.FullscreenToggled += (s, e) => {
                 _readerFullscreen = false;
